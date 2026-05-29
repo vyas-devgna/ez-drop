@@ -1,132 +1,127 @@
-ez-drop ⚡ P2P File & Text Transfer
+<!-- Brutalist Sketch Tape Sticker -->
+<div class="absolute -top-4 left-10 right-10 h-8 bg-[rgba(212,175,55,0.4)] border-y border-dashed border-[var(--ink)] rotate-[-1deg] pointer-events-none"></div>
 
-ez-drop is a zero-cost, serverless, peer-to-peer secure file and text transfer utility built entirely as a static web application. It runs directly inside modern web browsers using WebRTC DataChannels to pipe files and text snippets from device to device without ever touching or storing data on an intermediary server.
+<!-- Header Block -->
+<header class="border-b-4 border-solid border-[var(--ink)] pb-6 mb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+  <div>
+    <div class="bg-[var(--yellow)] brutal-border p-2 px-4 rotate-[-1.5deg] inline-block brutal-shadow-sm mb-4">
+      <span class="text-xs font-mono-custom font-bold tracking-widest uppercase text-black">P2P Technical Doc</span>
+    </div>
+    <h1 class="serif-display text-4xl md:text-5xl font-extrabold tracking-tight">ez-drop ⚡</h1>
+    <p class="text-sm font-mono-custom text-[var(--muted)] mt-2">Zero-Cost • Serverless • Peer-to-Peer Secure File Transfer</p>
+  </div>
+  <div class="text-right font-mono-custom text-xs">
+    <div>CREATED BY: <a href="https://github.com/vyas-devgna" class="underline font-bold hover:text-[var(--blue)]">@vyas-devgna</a></div>
+    <div class="opacity-75">VERSION: 1.2.0-STABLE</div>
+  </div>
+</header>
 
-Developed by @vyas-devgna.
+<!-- Visual SVG Illustration (P2P Channel Handshake diagram) -->
+<div class="mb-10 p-6 bg-[var(--surface-warm)] brutal-border brutal-shadow-sm flex flex-col items-center gap-4 relative overflow-hidden">
+  <div class="absolute top-2 right-2 rotate-[4deg] bg-[var(--violet)] text-black text-[10px] font-mono-custom font-bold px-2 py-0.5 border border-black brutal-shadow-sm">
+    DIRECT WEB-RTC TUNNEL
+  </div>
+  <h3 class="serif-display font-bold text-lg text-center">Transmission Vector Diagram</h3>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 160" class="w-full max-w-xl h-auto">
+    <!-- Node A -->
+    <rect x="20" y="30" width="130" height="80" fill="#FFFFFF" stroke="#111111" stroke-width="3" rx="4" filter="drop-shadow(3px 3px 0px #111111)"/>
+    <text x="85" y="65" font-family="Plus Jakarta Sans" font-weight="bold" font-size="14" text-anchor="middle" fill="#111111">Browser Client A</text>
+    <text x="85" y="85" font-family="JetBrains Mono" font-size="11" text-anchor="middle" fill="#6C6863">Room Host</text>
 
-🎨 Visual Identity: Editorial Brutalist Sketchbook
+    <!-- Dynamic Handshake Arrow -->
+    <path d="M 170,70 L 410,70" fill="none" stroke="#111111" stroke-width="4" stroke-dasharray="8 8"/>
+    <!-- Loopback Indicator -->
+    <path d="M 285,55 L 295,70 L 285,85" fill="none" stroke="#111111" stroke-width="4"/>
+    <path d="M 295,85 L 285,70 L 295,55" fill="none" stroke="#111111" stroke-width="4"/>
+    <rect x="210" y="90" width="160" height="30" fill="#FFD93D" stroke="#111111" stroke-width="2" rx="2" filter="drop-shadow(2px 2px 0px #111111)"/>
+    <text x="290" y="110" font-family="JetBrains Mono" font-weight="bold" font-size="10" text-anchor="middle" fill="#111111">Encrypted DataChannel</text>
 
-ez-drop is built around a unique hybrid visual identity. It avoids generic, rounded SaaS interfaces in favor of:
+    <!-- Node B -->
+    <rect x="430" y="30" width="130" height="80" fill="#FFFFFF" stroke="#111111" stroke-width="3" rx="4" filter="drop-shadow(3px 3px 0px #111111)"/>
+    <text x="495" y="65" font-family="Plus Jakarta Sans" font-weight="bold" font-size="14" text-anchor="middle" fill="#111111">Browser Client B</text>
+    <text x="495" y="85" font-family="JetBrains Mono" font-size="11" text-anchor="middle" fill="#6C6863">Connector Node</text>
+  </svg>
+  
+  <p class="text-xs font-mono-custom text-[var(--muted)] text-center mt-2">All data streams directly as chunks in active RAM memory between browser contexts. No cloud databases or intermediates used.</p>
+</div>
 
-Neo-Brutalist Foundations: Sharp border structures, bold, thick contrast ink margins, flat offset drop shadows, and high-impact sticker accents.
+<!-- Editorial Sections -->
+<section class="flex flex-col gap-8">
+  
+  <!-- Visual Identity -->
+  <article class="flex flex-col gap-3">
+    <h2 class="serif-display text-2xl font-bold border-b-2 border-solid border-[var(--ink)] pb-1.5 flex items-center gap-2">
+      <span class="w-4 h-4 bg-[var(--yellow)] border-2 border-black inline-block"></span>
+      <span>Visual Identity Summary</span>
+    </h2>
+    <p class="text-sm leading-relaxed text-[var(--charcoal)]">
+      ez-drop rejects standard corporate SaaS blueprints in favor of our signature <strong>Editorial Brutalist Sketchbook</strong> architecture. It prioritizes newsprint aesthetics, high information density, tactile bordered action elements, and wobbly organic accents. The workspace has been rigorously simplified, completely hiding diagnostic statistics like milliseconds latencies to keep focus on simple sharing.
+    </p>
+  </article>
 
-Newsprint Editorial: Clean, readable typography pairing high-fashion serif titles with precise monospace metadata readouts.
+  <!-- Chunk Protocol -->
+  <article class="flex flex-col gap-3">
+    <h2 class="serif-display text-2xl font-bold border-b-2 border-solid border-[var(--ink)] pb-1.5 flex items-center gap-2">
+      <span class="w-4 h-4 bg-[var(--blue)] border-2 border-black inline-block"></span>
+      <span>Adaptive Transmission Protocol</span>
+    </h2>
+    <p class="text-sm leading-relaxed text-[var(--charcoal)]">
+      Files are divided into structured $64\text{ KB}$ array segments streamed via WebRTC channels. In order to manage performance, active backpressure polling halts transmission whenever the socket queue size peaks.
+    </p>
 
-Sketchbook Accents: Playful paper background patterns, wobbly taped borders, and hand-drawn notations that make the interface feel highly organic, human, and interactive.
+    <!-- Technical Code Blocks -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+      
+      <!-- Metablock Card -->
+      <div class="bg-[var(--surface-warm)] brutal-border p-4">
+        <div class="text-[10px] font-mono-custom font-bold uppercase text-[var(--muted)] border-b border-dashed border-black pb-1 mb-2">1. Handshake (file-meta)</div>
+        <pre class="font-mono-custom text-[11px] overflow-x-auto whitespace-pre">
+{"type": "file-meta","from": "Paper Tiger","payload": {"transferId": "tx-98asd2f3a","name": "archive.zip","size": 154857600,"type": "application/zip","totalChunks": 2363}}      <!-- Chunkblock Card -->
+      <div class="bg-[var(--surface-warm)] brutal-border p-4">
+        <div class="text-[10px] font-mono-custom font-bold uppercase text-[var(--muted)] border-b border-dashed border-black pb-1 mb-2">2. Streaming (file-chunk)</div>
+        <pre class="font-mono-custom text-[11px] overflow-x-auto whitespace-pre">
+{"type": "file-chunk","payload": {"transferId": "tx-98asd2f3a","chunkIndex": 412,"data": "[ArrayBuffer Slice]"}}    </div>
+  </article>
 
-🚀 Core Features
+  <!-- Deployment & Setup -->
+  <article class="flex flex-col gap-3">
+    <h2 class="serif-display text-2xl font-bold border-b-2 border-solid border-[var(--ink)] pb-1.5 flex items-center gap-2">
+      <span class="w-4 h-4 bg-[var(--violet)] border-2 border-black inline-block"></span>
+      <span>Zero-Backend Static Deployment</span>
+    </h2>
+    <p class="text-sm leading-relaxed text-[var(--charcoal)]">
+      ez-drop has zero server dependencies. You can compile, run, and host the client completely free using static pages configurations.
+    </p>
 
-True Peer-to-Peer (Serverless):
-All byte data travels directly through encrypted peer connections ($RTCDataChannel$). There is no server upload, no storage database, and no bandwidth quota limits.
+    <!-- Directory tree card -->
+    <div class="bg-[var(--surface-warm)] brutal-border p-4 font-mono-custom text-xs max-w-sm">
+      <div class="font-bold border-b border-[var(--ink)] pb-1.5 mb-2 uppercase">GitHub Pages Tree Structure</div>
+      <div>.</div>
+      <div>├── index.html</div>
+      <div>├── sw.js</div>
+      <div>└── assets/</div>
+      <div class="pl-4">└── logo.png</div>
+    </div>
+  </article>
 
-Simplified User Flow (Progressive Disclosure):
-The app launches with only two distinct, clean pathways: "Share this device" and "Connect to another device". The complex workspace, file dropzones, and message logs stay hidden until a peer connection is actively established.
+  <!-- Security Parameters -->
+  <article class="flex flex-col gap-3">
+    <h2 class="serif-display text-2xl font-bold border-b-2 border-solid border-[var(--ink)] pb-1.5 flex items-center gap-2">
+      <span class="w-4 h-4 bg-[var(--gold)] border-2 border-black inline-block"></span>
+      <span>Security & Privacy Handshake</span>
+    </h2>
+    <ul class="list-disc pl-5 text-sm flex flex-col gap-1.5 text-[var(--charcoal)]">
+      <li><strong>Direct End-to-End Cryptography</strong>: Secured with native DTLS / SRTP layers.</li>
+      <li><strong>Zero Storage Cloud Print</strong>: Packets exist strictly inside browser scopes. No data footprints remain in the public domain.</li>
+      <li><strong>Crypto-Handshake Passcodes</strong>: Challenge verification handshake built with standard SHA-256 hashes ensures secure access controls.</li>
+    </ul>
+  </article>
 
-Adaptive Backpressure Streaming:
-Large files are automatically divided into $64\text{ KB}$ binary array chunks. Transmission speeds are controlled using active queue polling of the WebRTC buffered queue (bufferedAmount), pausing chunks before buffers flood, ensuring massive transfers run stably in RAM.
+</section>
 
-Built-in QR Camera Scanner:
-Integrated QR generation (qrcode.js) and high-performance camera decoding (html5-qrcode) allow mobile devices to pair instantly with a single button click.
-
-Secure Challenge-Response Password Handshake:
-Optional passphrase gatekeeper utilizing client-side SHA-256 hashes (Web Crypto API). It verifies peer credentials via mathematical proofs without ever transmitting the raw passcode.
-
-Fully Offline Capable PWA:
-A custom-built Service Worker (sw.js) dynamically caches critical app shells, stylesheets, and CDN-loaded scripts, ensuring the app launches offline. Includes standard native Android/Desktop install prompts and Safari-manual guides.
-
-In-Memory Loopback Sandbox:
-Includes a developer debug console simulator that mimics direct browser-to-browser streaming entirely within a single tab—ideal for debugging without needing a second device.
-
-🛠️ Tech Stack & Architecture
-
-Styling: Tailwind CSS
-
-Signaling Protocol: PeerJS (utilizing the public free PeerJS Cloud Server for room handshakes and Google STUN arrays for NAT traversal)
-
-Icons: Lucide Icons
-
-P2P transport: WebRTC DataChannels (RTCDataChannel)
-
-📦 File Transfer Chunk Protocol
-
-To safely stream data through WebRTC without overwhelming browser memory, ez-drop uses a custom light transport payload protocol:
-
-1. Metadata Handshake (file-meta)
-
-Sent from transmitter to recipient before file streaming begins:
-
-{
-  "type": "file-meta",
-  "from": "Paper Tiger",
-  "payload": {
-    "transferId": "tx-98asd2f3a",
-    "name": "project_archive.zip",
-    "size": 154857600,
-    "type": "application/zip",
-    "totalChunks": 2363
-  }
-}
-
-
-2. Slices (file-chunk)
-
-Sent repeatedly in synchronous loops throttled by backpressure mechanics:
-
-{
-  "type": "file-chunk",
-  "payload": {
-    "transferId": "tx-98asd2f3a",
-    "chunkIndex": 412,
-    "data": "[ArrayBuffer Slice Data]"
-  }
-}
-
-
-3. Finish Signal (file-complete)
-
-Indicates the payload has fully arrived. The recipient compiles the stored chunks into a single unified Blob and triggers the browser's native saving mechanism:
-
-{
-  "type": "file-complete",
-  "payload": {
-    "transferId": "tx-98asd2f3a"
-  }
-}
-
-
-🚀 Easy Static Deployment
-
-Since ez-drop requires no server backend or API database, you can host it entirely for free on static hosting providers like GitHub Pages.
-
-Setup Instructions:
-
-Clone your repository:
-
-git clone [https://github.com/vyas-devgna/ez-drop.git](https://github.com/vyas-devgna/ez-drop.git)
-cd ez-drop
-
-
-Ensure you have the following directory file tree structure:
-
-.
-├── index.html
-├── sw.js
-└── assets/
-    └── logo.png
-
-
-Push your repository to GitHub, go to your repository Settings -> Pages, and set the build branch source to /root (main/master).
-
-Your application will launch live instantly at https://vyas-devgna.github.io/ez-drop/!
-
-🔒 Privacy & Security Audit
-
-Zero-Storage Promise: No byte data is uploaded. Your documents, photos, or archives are stored strictly in local memory and pass through secure peer-to-peer networks.
-
-DTLS/SRTP Encrypted: WebRTC enforces end-to-end encryption by default, preventing ISP or network snooping.
-
-Secure Handshake Gate: Enabling the optional passphrase blocks incoming connections from pairing with your 5-digit room unless their devices can correctly solve the crypto proof check.
-
-📜 License
-
-This project is open-source and licensed under the MIT License.
+<!-- Footer block -->
+<footer class="mt-12 pt-6 border-t-4 border-solid border-[var(--ink)] text-center font-mono-custom text-xs text-[var(--muted)] flex justify-between items-center">
+  <span>Project under MIT License</span>
+  <a href="https://github.com/vyas-devgna/ez-drop" class="underline font-bold text-black hover:text-[var(--blue)]">vyas-devgna / ez-drop</a>
+</footer>
