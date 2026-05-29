@@ -5,18 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ez-drop — Instant Peer-to-Peer File Transfer</title>
   
+  <!-- SEO & PWA Meta -->
+  <meta name="description" content="A zero-cost, serverless, peer-to-peer secure file and text transfer utility using WebRTC DataChannels. No storage, no limits.">
+  <meta name="theme-color" content="#F9F8F6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ez-drop">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
   <!-- CDN Dependencies -->
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Playfair+Display:ital,wght@0,700;1,400&family=JetBrains+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <!-- PeerJS -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <!-- QRCode.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <!-- html5-qrcode for scanner -->
   <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
-  <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <style>
@@ -37,16 +38,13 @@
       --ok: #1F8A4C;
       --warn: #C97900;
       --bad: #CC0000;
+      --shadow-offset: 4px;
     }
 
-    .dark-mode {
-      --paper: #111111;
-      --surface: #1A1A1A;
-      --surface-warm: #22201C;
-      --ink: #F9F8F6;
-      --charcoal: #FFFDF5;
-      --muted-paper: #2A2825;
-      --muted: #B9B1A8;
+    @media (min-width: 768px) {
+      :root {
+        --shadow-offset: 8px;
+      }
     }
 
     body {
@@ -57,8 +55,10 @@
       background-size: 24px 24px;
       background-opacity: 0.15;
       transition: background-color 0.3s ease, color 0.3s ease;
+      overflow-x: hidden;
     }
 
+    /* Editorial Brutalist Typography */
     .serif-display {
       font-family: 'Playfair Display', serif;
     }
@@ -71,13 +71,13 @@
       font-family: 'Kalam', cursive;
     }
 
-    /* Neo-Brutalism Utilities */
+    /* Neo-Brutalism Foundations */
     .brutal-border {
       border: 3px solid var(--ink);
     }
     
     .brutal-shadow {
-      box-shadow: 4px 4px 0px 0px var(--ink);
+      box-shadow: var(--shadow-offset) var(--shadow-offset) 0px 0px var(--ink);
     }
 
     .brutal-shadow-sm {
@@ -85,7 +85,7 @@
     }
 
     .brutal-shadow-lg {
-      box-shadow: 8px 8px 0px 0px var(--ink);
+      box-shadow: calc(var(--shadow-offset) * 1.5) calc(var(--shadow-offset) * 1.5) 0px 0px var(--ink);
     }
 
     .brutal-btn {
@@ -99,6 +99,13 @@
       box-shadow: 0px 0px 0px 0px var(--ink);
     }
 
+    .brutal-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: 3px 3px 0px 0px var(--ink);
+    }
+
     .brutal-btn-sm {
       border: 2px solid var(--ink);
       box-shadow: 2px 2px 0px 0px var(--ink);
@@ -110,7 +117,24 @@
       box-shadow: 0px 0px 0px 0px var(--ink);
     }
 
-    /* Custom Scrollbars */
+    /* Fluid Sizing Fixes */
+    .room-code-text {
+      font-size: clamp(2.25rem, 10vw, 4.5rem);
+      line-height: 1;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+    @media (min-width: 768px) {
+      .action-grid {
+        grid-template-columns: 1.2fr 1fr;
+      }
+    }
+
+    /* Scrollbar */
     ::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -124,282 +148,299 @@
       border: 2px solid var(--paper);
     }
 
-    /* Audio preference checkbox hack */
-    .audio-pulse {
-      animation: pulse 1.5s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.05); }
-    }
-
     /* Screen Reader Skip Link */
     .skip-link {
       position: absolute;
-      top: -40px;
+      top: -100px;
       left: 0;
       background: var(--yellow);
       color: #000;
-      padding: 8px;
+      padding: 12px;
       z-index: 100;
       transition: top 0.2s;
     }
     .skip-link:focus {
       top: 0;
     }
+
+    /* Reduced Motion Safe Pulsing */
+    @media (prefers-reduced-motion: no-preference) {
+      .pulse-indicator {
+        animation: statusPulse 2s infinite ease-in-out;
+      }
+    }
+
+    @keyframes statusPulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
   </style>
 </head>
-<body class="min-h-screen flex flex-col relative antialiased pb-12">
-  <a href="#main-content" class="skip-link font-mono-custom brutal-border brutal-shadow-sm">Skip to Main Content</a>
+<body class="min-h-screen flex flex-col relative antialiased pb-safe">
+  <a href="#main-content" class="skip-link font-mono-custom brutal-border brutal-shadow-sm">Skip to main content</a>
 
-  <!-- Audio elements generated via Web Audio API -->
+  <!-- ARIA Live region for state changes -->
+  <div id="aria-status" class="sr-only" aria-live="polite">Ready to connect</div>
 
-  <!-- Top Sticky Banner (Offline / Error Alerts) -->
-  <div id="global-alert" class="hidden brutal-border bg-[#FF4D4D] text-white p-3 text-center font-mono-custom text-xs relative z-50">
-    <span id="global-alert-text">Warning notification bar</span>
-    <button onclick="hideGlobalAlert()" class="absolute right-4 top-3 hover:underline">✕ Dismiss</button>
+  <!-- Global Sticky Alert Bar -->
+  <div id="global-alert" class="hidden brutal-border bg-[var(--correction)] text-black p-3 text-center font-mono-custom text-xs relative z-50">
+    <span id="global-alert-text">Alert message goes here</span>
+    <button onclick="hideGlobalAlert()" class="ml-3 underline font-bold" aria-label="Dismiss alert">✕ Dismiss</button>
   </div>
 
-  <!-- Main Grid Layout Header -->
-  <header class="w-full max-w-7xl mx-auto px-4 pt-6 pb-2">
-    <div class="flex flex-col md:flex-row justify-between items-center bg-[var(--surface)] brutal-border p-4 brutal-shadow gap-4">
-      <div class="flex items-center gap-4">
-        <!-- Brand Logo/Sticker -->
-        <div class="bg-[var(--yellow)] brutal-border p-2 px-4 rotate-[-1deg] inline-block brutal-shadow-sm">
-          <h1 class="serif-display text-2xl md:text-3xl font-extrabold tracking-tight select-none">ez-drop</h1>
-        </div>
-        <div class="hidden sm:block text-xs font-mono-custom opacity-70">
-          ZERO-COST • DIRECT P2P • PWA
-        </div>
-      </div>
-
-      <!-- Network Quality / Latency Strip -->
-      <div class="flex items-center gap-3 bg-[var(--muted-paper)] p-2 brutal-border font-mono-custom text-xs">
-        <span class="relative flex h-3 w-3">
-          <span id="pulse-dot-bg" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-          <span id="pulse-dot" class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-        </span>
-        <span id="network-status" class="uppercase font-bold">Uninitialized</span>
-        <span id="ping-badge" class="hidden bg-[var(--ink)] text-[var(--paper)] px-1.5 py-0.5 rounded-sm">0ms</span>
-      </div>
-
-      <!-- Header actions (Burger Menu & Theme Toggle) -->
+  <!-- Simplified Header Section -->
+  <header class="w-full max-w-6xl mx-auto px-4 pt-6 pb-2">
+    <div class="flex justify-between items-center bg-[var(--surface)] brutal-border p-4 brutal-shadow">
       <div class="flex items-center gap-3">
-        <button id="theme-btn" onclick="toggleTheme()" class="brutal-btn bg-[var(--surface-warm)] p-2". aria-label="Toggle dark/light mode">
-          <i data-lucide="sun" id="theme-icon-light" class="w-5 h-5 block"></i>
-          <i data-lucide="moon" id="theme-icon-dark" class="w-5 h-5 hidden"></i>
-        </button>
-        <button onclick="toggleMenu()" class="brutal-btn bg-[var(--yellow)] p-2 px-3 flex items-center gap-2 font-mono-custom uppercase font-bold text-sm" aria-label="Open menu">
-          <i data-lucide="menu" class="w-5 h-5"></i>
-          <span>Menu</span>
-        </button>
+        <!-- Logo Stamp -->
+        <div class="bg-[var(--yellow)] brutal-border p-2 px-4 rotate-[-1deg] inline-block brutal-shadow-sm select-none">
+          <h1 class="serif-display text-xl md:text-2xl font-extrabold tracking-tight">ez-drop</h1>
+        </div>
       </div>
+
+      <!-- Compact Connectivity Pill -->
+      <div class="flex items-center gap-2.5 bg-[var(--muted-paper)] p-2 px-3 brutal-border font-mono-custom text-xs">
+        <span class="relative flex h-2.5 w-2.5">
+          <span id="status-dot-pulse" class="pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--gold)] opacity-75"></span>
+          <span id="status-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--gold)]"></span>
+        </span>
+        <span id="header-status-lbl" class="uppercase font-bold tracking-wider">Starting up</span>
+      </div>
+
+      <!-- Burger Drawer Trigger -->
+      <button onclick="toggleMenu()" class="brutal-btn bg-[var(--surface-warm)] p-2.5 px-4 font-mono-custom uppercase font-bold text-xs tracking-wider flex items-center gap-2" aria-label="Open secondary menu">
+        <i data-lucide="menu" class="w-4 h-4"></i>
+        <span class="hidden sm:inline">Menu</span>
+      </button>
     </div>
   </header>
 
-  <!-- Main Content Space -->
-  <main id="main-content" class="w-full max-w-7xl mx-auto px-4 py-4 flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6">
-    
-    <!-- LEFT PANEL: Connection Ticket & QR Code (lg:col-span-5) -->
-    <section class="lg:col-span-5 flex flex-col gap-6" aria-labelledby="connect-header">
-      <h2 id="connect-header" class="sr-only">Connection & Peer Discovery</h2>
+  <!-- Main Viewport Router Container -->
+  <main id="main-content" class="w-full max-w-6xl mx-auto px-4 py-4 flex-grow flex flex-col justify-center">
+
+    <!-- STATE 1: READY / HOME SCREEN (Simplified progressive disclosure grid) -->
+    <section id="state-ready" class="action-grid py-4">
       
-      <!-- Identity Tag -->
-      <div class="bg-[var(--surface-warm)] brutal-border p-4 brutal-shadow flex flex-col gap-2 relative overflow-hidden">
-        <div class="absolute top-0 right-0 bg-[var(--violet)] border-l-3 border-b-3 border-[var(--ink)] p-1 px-3 text-[10px] font-mono-custom font-bold tracking-wider rotate-[3deg]">
-          DEVICE ID
-        </div>
-        <label for="device-name-input" class="text-xs font-mono-custom uppercase tracking-wide text-[var(--muted)]">Your Temporary Identity:</label>
-        <div class="flex gap-2">
-          <input type="text" id="device-name-input" class="bg-[var(--paper)] brutal-border p-2 font-mono-custom text-sm flex-grow font-bold focus:outline-none focus:bg-[var(--surface)]" value="Generating..." onchange="updateDeviceName(this.value)">
-          <button onclick="regenerateIdentityName()" class="brutal-btn bg-[var(--muted-paper)] p-2" title="Regenerate identity">
-            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
-          </button>
-        </div>
-      </div>
+      <!-- Card 1: Share device ticket -->
+      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow relative flex flex-col gap-5">
+        <!-- Stylized Sketch Tape Accent -->
+        <div class="absolute -top-3 left-12 right-12 h-6 bg-[rgba(212,175,55,0.3)] border-y border-dashed border-[var(--ink)] rotate-[-1deg] pointer-events-none"></div>
 
-      <!-- Room Code Editorial Ticket -->
-      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow relative flex flex-col gap-4">
-        <!-- Sketchbook Tape -->
-        <div class="absolute -top-3 left-12 right-12 h-6 bg-[rgba(212,175,55,0.4)] border-y border-dashed border-[var(--ink)] rotate-[-1.5deg] pointer-events-none"></div>
-
-        <div class="flex justify-between items-center mt-2">
-          <span class="text-xs font-mono-custom bg-[var(--ink)] text-[var(--paper)] px-2 py-0.5 uppercase">Room Ticket</span>
-          <span class="text-xs font-mono-custom text-[var(--muted)]" id="room-status-lbl">Generating room...</span>
+        <div class="flex justify-between items-center mt-2 border-b-2 border-dashed border-[var(--ink)] pb-2">
+          <span class="text-xs font-mono-custom bg-[var(--ink)] text-[var(--paper)] px-2.5 py-0.5 uppercase tracking-widest">Share this device</span>
+          <span class="text-[10px] font-mono-custom text-[var(--muted)] uppercase font-bold" id="ready-status-desc">Generating Room...</span>
         </div>
 
-        <div class="py-4 border-y-2 border-dashed border-[var(--ink)] text-center relative">
-          <span class="font-sketch text-xs absolute -top-1 left-2 text-[var(--muted)] rotate-[-6deg]">Your 5-digit key:</span>
-          <div id="room-code-display" class="font-mono-custom text-5xl md:text-6xl font-bold tracking-widest text-[var(--ink)] select-all py-1">
+        <div class="text-center py-2 relative">
+          <span class="font-sketch text-xs absolute -top-2 left-1 text-[var(--muted)] rotate-[-5deg] select-none">Your 5-digit code:</span>
+          <div id="room-code-display" class="font-mono-custom room-code-text font-bold tracking-widest text-[var(--ink)] select-all py-2">
             00000
           </div>
         </div>
 
-        <!-- Connection Action Buttons -->
-        <div class="grid grid-cols-2 gap-2">
-          <button onclick="copyShareLink()" class="brutal-btn bg-[var(--surface-warm)] py-2.5 px-2 text-xs font-mono-custom font-bold uppercase flex items-center justify-center gap-1.5">
+        <div class="grid grid-cols-2 gap-2.5">
+          <button onclick="copyShareLink()" class="brutal-btn bg-[var(--surface-warm)] py-3 px-2 text-xs font-mono-custom font-bold uppercase flex items-center justify-center gap-2">
             <i data-lucide="copy" class="w-4 h-4"></i>
             <span id="copy-btn-text">Copy Link</span>
           </button>
-          <button id="native-share-btn" onclick="triggerNativeShare()" class="brutal-btn bg-[var(--surface-warm)] py-2.5 px-2 text-xs font-mono-custom font-bold uppercase flex items-center justify-center gap-1.5 opacity-50 cursor-not-allowed" disabled>
+          <button id="native-share-btn" onclick="triggerNativeShare()" class="brutal-btn bg-[var(--surface-warm)] py-3 px-2 text-xs font-mono-custom font-bold uppercase flex items-center justify-center gap-2 opacity-50 cursor-not-allowed" disabled>
             <i data-lucide="share-2" class="w-4 h-4"></i>
             <span>Share Link</span>
           </button>
         </div>
 
-        <!-- Inline QR Container inside cardboard frame -->
-        <div class="bg-[var(--paper)] brutal-border p-4 flex flex-col items-center justify-center relative mt-2">
-          <div class="absolute -top-2 -right-2 bg-[var(--gold)] brutal-border text-[10px] font-mono-custom p-0.5 px-2 font-bold rotate-[5deg] uppercase">
-            Scan to Join
+        <!-- Cardboard framed QR integration -->
+        <div class="bg-[var(--paper)] brutal-border p-3 flex flex-col items-center justify-center relative mt-1 min-h-[170px]">
+          <div class="absolute -top-2.5 -right-2 bg-[var(--gold)] brutal-border text-[9px] font-mono-custom p-0.5 px-2.5 font-bold rotate-[4deg] uppercase">
+            Live QR Code
           </div>
           <div id="qrcode" class="bg-white p-2 border-2 border-[var(--ink)]"></div>
-          <div id="qr-fallback-msg" class="hidden text-center text-xs font-mono-custom text-[var(--red)] mt-2">QR generation failed. Use the code above.</div>
+          <div id="qr-fallback-msg" class="hidden text-center text-xs font-mono-custom text-[var(--red)] mt-2">QR failed to build.</div>
         </div>
+        <p class="text-[11px] font-mono-custom text-[var(--muted)] text-center">Ask the other device to scan or enter your 5-digit code to connect.</p>
       </div>
 
-      <!-- Join a Room Box -->
-      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col gap-4 relative">
-        <h3 class="serif-display text-xl font-bold">Connect to Another Device</h3>
-        <p class="text-xs text-[var(--muted)] font-mono-custom">Enter a 5-digit room key or scan their QR code to request a peer connection.</p>
-        
-        <div class="flex flex-col sm:flex-row gap-2">
-          <input type="text" id="target-room-input" placeholder="84720" max="5" class="bg-[var(--paper)] brutal-border p-3 font-mono-custom font-bold text-center text-xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[var(--ink)] sm:w-44" uppercase>
-          <button onclick="connectToRoomBtn()" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] p-3 font-mono-custom uppercase font-bold text-sm tracking-wide flex-grow flex items-center justify-center gap-2">
-            <i data-lucide="link" class="w-4 h-4"></i>
-            <span>Connect</span>
+      <!-- Card 2: Connect to someone else -->
+      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col justify-between gap-5 relative">
+        <div class="flex flex-col gap-2.5">
+          <h2 class="serif-display text-2xl font-bold">Connect to another device</h2>
+          <p class="text-xs text-[var(--muted)] font-mono-custom">Enter their code manually below or trigger the camera reader.</p>
+        </div>
+
+        <div class="flex flex-col gap-3">
+          <label for="target-room-input" class="sr-only">Enter 5 digit target code</label>
+          <input type="text" id="target-room-input" placeholder="Enter Code (e.g. 84720)" maxlength="5" autocomplete="off" class="bg-[var(--paper)] brutal-border p-4 font-mono-custom font-bold text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[var(--ink)] uppercase w-full" oninput="handleTargetInput(this)">
+          
+          <button onclick="connectToRoomBtn()" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] p-4 font-mono-custom uppercase font-bold text-sm tracking-wide flex items-center justify-center gap-2">
+            <i data-lucide="arrow-right-circle" class="w-5 h-5"></i>
+            <span>Connect to Peer</span>
           </button>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 my-1">
           <div class="flex-grow border-t border-[var(--ink)] border-dashed"></div>
-          <span class="text-xs font-mono-custom text-[var(--muted)]">OR</span>
+          <span class="text-xs font-mono-custom text-[var(--muted)] uppercase font-bold select-none">or</span>
           <div class="flex-grow border-t border-[var(--ink)] border-dashed"></div>
         </div>
 
-        <button onclick="openQRScanner()" class="brutal-btn bg-[var(--yellow)] p-3 font-mono-custom uppercase font-bold text-sm tracking-wide flex items-center justify-center gap-2 w-full">
+        <button onclick="openQRScanner()" class="brutal-btn bg-[var(--yellow)] p-4 font-mono-custom uppercase font-bold text-sm tracking-wide flex items-center justify-center gap-2.5">
           <i data-lucide="scan" class="w-5 h-5"></i>
-          <span>Open Camera Scanner</span>
+          <span>Scan Partner QR</span>
+        </button>
+        <p class="text-[11px] font-mono-custom text-[var(--muted)] text-center">Your camera permissions are only initialized upon tapping the scan tool.</p>
+      </div>
+    </section>
+
+    <!-- STATE 2: CONNECTING / TRANSITIONAL STATE CARD -->
+    <section id="state-connecting" class="hidden max-w-md mx-auto w-full py-12">
+      <div class="bg-[var(--surface)] brutal-border p-8 brutal-shadow text-center flex flex-col gap-6 relative">
+        <div class="animate-spin inline-block mx-auto w-12 h-12 border-4 border-solid border-[var(--ink)] border-t-transparent rounded-full" role="status" aria-label="loading"></div>
+        <div>
+          <h2 class="serif-display text-xl font-bold">Establishing Channel</h2>
+          <p id="connecting-state-desc" class="text-xs font-mono-custom text-[var(--muted)] mt-2">Connecting to room...</p>
+        </div>
+        <button onclick="terminateSession()" class="brutal-btn bg-[var(--muted-paper)] p-3 font-mono-custom uppercase font-bold text-xs">
+          Cancel Connection Attempt
         </button>
       </div>
     </section>
 
-    <!-- RIGHT PANEL: Transfer Dashboard, Dropspace, Active Streams & Chat (lg:col-span-7) -->
-    <section class="lg:col-span-7 flex flex-col gap-6" aria-labelledby="transfer-header">
-      <h2 id="transfer-header" class="sr-only">Transfer Interface & Sandbox</h2>
-
-      <!-- Password Shield Badge (Conditional Indicator) -->
-      <div id="password-status-bar" class="hidden bg-[var(--surface-warm)] brutal-border p-3 brutal-shadow-sm flex justify-between items-center font-mono-custom text-xs">
-        <span class="flex items-center gap-2 font-bold">
-          <i data-lucide="shield-alert" class="text-[var(--gold)] w-4 h-4"></i>
-          <span>SECURED LOCKMODE: Handshake required</span>
-        </span>
-        <button onclick="disablePasswordMode()" class="underline text-[var(--red)] uppercase hover:font-bold">Disable</button>
-      </div>
-
-      <!-- Peer Status Banner (Wobbly Sticky Card look) -->
-      <div id="peer-banner" class="bg-[var(--surface-warm)] brutal-border p-4 brutal-shadow flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
-        <!-- Hand-drawn sticky note graphic/vibe -->
+    <!-- STATE 3: CONNECTED WORKSPACE (Replaces dashboard once accepting incoming/outgoing connection) -->
+    <section id="state-connected" class="hidden flex flex-col gap-6 max-w-4xl mx-auto w-full py-4">
+      
+      <!-- Unified Connection Info Badge -->
+      <div class="bg-[var(--surface-warm)] brutal-border p-4 brutal-shadow flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div class="flex items-center gap-3">
-          <div class="w-3 h-3 rounded-full bg-[var(--muted)] shrink-0" id="peer-indicator-dot"></div>
+          <div class="w-3.5 h-3.5 rounded-full bg-[var(--ok)] shrink-0 pulse-indicator"></div>
           <div>
-            <div class="text-xs font-mono-custom text-[var(--muted)] uppercase">Connected Peer</div>
-            <div id="peer-name-display" class="font-bold serif-display text-lg">No Active Connection</div>
+            <div class="text-[10px] font-mono-custom text-[var(--muted)] uppercase tracking-wider font-bold">Active Connection Stream</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span id="peer-name-display" class="font-bold serif-display text-lg">Recipient Name</span>
+              <span id="latency-strip" class="font-mono-custom text-[10px] bg-[var(--ink)] text-[var(--paper)] px-1.5 py-0.5 rounded-sm">0ms</span>
+            </div>
           </div>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <div class="bg-[var(--muted-paper)] brutal-border px-2.5 py-1 text-xs font-mono-custom" id="peer-status-tag">
-            DISCONNECTED
+        <button onclick="terminateSession()" class="brutal-btn bg-[var(--red)] text-white p-2 px-4 text-xs font-mono-custom uppercase font-bold">
+          Disconnect Stream
+        </button>
+      </div>
+
+      <!-- Interactive Core Workspace Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Left Column: Quick Drag Drop & Pick label -->
+        <div class="flex flex-col gap-6">
+          <div id="drop-zone" class="bg-[var(--surface)] brutal-border p-8 brutal-shadow relative transition-colors duration-200 flex flex-col items-center justify-center text-center cursor-pointer min-h-[250px] border-dashed border-4 border-[var(--ink)]">
+            <input type="file" id="file-picker" multiple class="hidden" onchange="handleFileSelection(event)">
+            
+            <div class="flex flex-col items-center justify-center gap-4">
+              <div class="p-4 bg-[var(--muted-paper)] rounded-full brutal-border">
+                <i data-lucide="upload-cloud" class="w-10 h-10 text-[var(--ink)]"></i>
+              </div>
+              <div>
+                <h3 class="serif-display text-xl font-bold mb-1">Send Files</h3>
+                <p class="text-xs font-mono-custom text-[var(--muted)] mb-2">Drop local files here or tap to search storage.</p>
+                <p class="text-[9px] font-mono-custom text-[var(--ink)] bg-[var(--yellow)] px-2 py-0.5 inline-block brutal-border">Unlimited Sizing • Peer-to-Peer RAM Stream</p>
+              </div>
+            </div>
           </div>
-          <button id="disconnect-btn" onclick="terminateSession()" class="hidden brutal-btn-sm bg-[var(--red)] text-white px-2.5 py-1 text-xs font-mono-custom uppercase font-bold">
-            Disconnect
-          </button>
+        </div>
+
+        <!-- Right Column: Quick Chat Snippets -->
+        <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col justify-between gap-4">
+          <div class="flex justify-between items-center border-b border-[var(--ink)] pb-2">
+            <h3 class="serif-display text-lg font-bold">Direct Clipboard / Text</h3>
+            <span class="text-[9px] font-mono-custom uppercase tracking-wider text-[var(--muted)]">Send instantly</span>
+          </div>
+
+          <div class="flex-grow flex flex-col gap-2">
+            <textarea id="text-input" placeholder="Type or paste text snippets here..." rows="4" class="bg-[var(--paper)] brutal-border p-3 font-mono-custom text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)] resize-none w-full flex-grow"></textarea>
+            
+            <div class="flex gap-2 justify-end">
+              <button onclick="pasteFromClipboard()" class="brutal-btn-sm bg-[var(--surface-warm)] p-2 px-3 text-xs font-mono-custom font-bold flex items-center gap-1.5" title="Paste from device clipboard">
+                <i data-lucide="clipboard" class="w-4 h-4"></i>
+                <span>Grab Clip</span>
+              </button>
+              <button onclick="sendTextMessage()" class="brutal-btn-sm bg-[var(--ink)] text-[var(--paper)] p-2 px-4 text-xs font-mono-custom font-bold uppercase flex items-center gap-2">
+                <span>Send</span>
+                <i data-lucide="send" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Drag & Drop Zone Container styled as Cargo Shipping Label -->
-      <div id="drop-zone" class="bg-[var(--surface)] brutal-border p-8 brutal-shadow relative transition-colors duration-200 flex flex-col items-center justify-center text-center cursor-pointer min-h-[220px]">
-        <!-- Rotating sticker badge -->
-        <div class="absolute top-2 right-2 bg-[var(--ink)] text-[var(--paper)] brutal-border p-1 px-3 text-[10px] font-mono-custom font-bold tracking-wider rotate-[3deg] select-none">
-          P2P DIRECT
-        </div>
-
-        <input type="file" id="file-picker" multiple class="hidden" onchange="handleFileSelection(event)">
-
-        <div class="flex flex-col items-center justify-center gap-4">
-          <div class="p-4 bg-[var(--muted-paper)] rounded-full brutal-border">
-            <i data-lucide="upload-cloud" class="w-10 h-10 text-[var(--ink)]"></i>
-          </div>
-          <div>
-            <h3 class="serif-display text-xl font-bold mb-1">Drop Files Here</h3>
-            <p class="text-xs font-mono-custom text-[var(--muted)] mb-2">Or tap to choose from your disk storage.</p>
-            <p class="text-[10px] font-mono-custom text-[var(--ink)] bg-[var(--yellow)] px-2 py-0.5 inline-block brutal-border">No size limit! Files stream in RAM.</p>
-          </div>
-        </div>
-
-        <!-- Multiple download note -->
-        <div class="mt-4 pt-4 border-t border-dashed border-[var(--ink)] w-full flex items-center justify-center gap-2">
-          <i data-lucide="info" class="w-4 h-4 text-[var(--muted)]"></i>
-          <span class="text-[10px] font-mono-custom text-[var(--muted)]">Your browser may trigger separate prompts for multi-downloads.</span>
-        </div>
-      </div>
-
-      <!-- Quick Clipboard Text Transfer Node -->
+      <!-- Connected Transfer List Stream -->
       <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col gap-4">
-        <div class="flex justify-between items-center">
-          <h3 class="serif-display text-lg font-bold">Quick Clipboard / Text</h3>
-          <span class="text-xs font-mono-custom text-[var(--muted)] uppercase">Direct Send</span>
+        <div class="flex justify-between items-center border-b-2 border-[var(--ink)] pb-2">
+          <h3 class="serif-display text-lg font-bold">Transfer Queue & Feeds</h3>
+          <button onclick="clearSessionLogs()" class="text-xs font-mono-custom hover:underline uppercase text-[var(--red)] font-bold">Clear All</button>
         </div>
-        <div class="flex flex-col gap-2">
-          <textarea id="text-input" placeholder="Type or paste text snippets here..." rows="3" class="bg-[var(--paper)] brutal-border p-3 font-mono-custom text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)] resize-none"></textarea>
-          <div class="flex gap-2 justify-end">
-            <button onclick="pasteFromClipboard()" class="brutal-btn-sm bg-[var(--surface-warm)] p-2 text-xs font-mono-custom font-bold flex items-center gap-1" title="Paste from browser clipboard">
-              <i data-lucide="clipboard" class="w-4 h-4"></i>
-              <span>Grab Clipboard</span>
-            </button>
-            <button onclick="sendTextMessage()" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] px-5 py-2 text-xs font-mono-custom font-bold uppercase flex items-center gap-2">
-              <span>Send Message</span>
-              <i data-lucide="send" class="w-4 h-4"></i>
-            </button>
-          </div>
+
+        <!-- Blank Queue State -->
+        <div id="queue-empty-state" class="text-center py-6 font-mono-custom text-xs text-[var(--muted)] flex flex-col items-center justify-center gap-2">
+          <i data-lucide="inbox" class="w-7 h-7 opacity-50"></i>
+          <span>No files or messages traded in this session yet. Pick a file above to begin.</span>
+        </div>
+
+        <div id="transfers-container" class="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
+          <!-- Dynamically populated stream transfer cards -->
         </div>
       </div>
 
-      <!-- Unified Stream Progress Queue & History List -->
-      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col gap-4">
-        <div class="flex justify-between items-center border-b-2 border-solid border-[var(--ink)] pb-2">
-          <h3 class="serif-display text-lg font-bold">Transfer Queue & Feed</h3>
-          <button onclick="clearSessionLogs()" class="text-xs font-mono-custom hover:underline uppercase text-[var(--red)]">Clear Feed</button>
-        </div>
-
-        <!-- Placeholder when empty -->
-        <div id="queue-empty-state" class="text-center py-8 font-mono-custom text-xs text-[var(--muted)] flex flex-col items-center justify-center gap-2">
-          <i data-lucide="hourglass" class="w-8 h-8 opacity-40"></i>
-          <span>No transfers or text logs yet. Make a connection to start trading files!</span>
-        </div>
-
-        <div id="transfers-container" class="flex flex-col gap-4 max-h-[400px] overflow-y-auto pr-1">
-          <!-- Dynamically populated Transfer Cards & Chat elements go here -->
-        </div>
+      <!-- Compact Session History Dropdown -->
+      <div class="bg-[var(--surface-warm)] brutal-border p-3 brutal-shadow-sm">
+        <details class="cursor-pointer group">
+          <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
+            <span class="flex items-center gap-2">
+              <i data-lucide="history" class="w-4 h-4"></i>
+              <span>View Session History Log</span>
+            </span>
+            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
+          </summary>
+          <div class="pt-3 border-t border-dashed border-[var(--ink)] mt-3">
+            <div id="history-container" class="font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2 max-h-[150px] overflow-y-auto">
+              <p class="text-center italic opacity-60">No completed items recorded in this session history.</p>
+            </div>
+          </div>
+        </details>
       </div>
 
     </section>
+
+    <!-- STATE 4: SYSTEM CONTEXT ERROR / FALLBACK SCREEN -->
+    <section id="state-error" class="hidden max-w-md mx-auto w-full py-8">
+      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow text-center flex flex-col gap-5">
+        <div class="w-12 h-12 bg-[var(--correction)] rounded-full brutal-border flex items-center justify-center mx-auto">
+          <i data-lucide="alert-triangle" class="w-6 h-6 text-black"></i>
+        </div>
+        <div>
+          <h2 class="serif-display text-xl font-bold" id="error-title-display">Connection Interrupted</h2>
+          <p id="error-state-desc" class="text-xs font-mono-custom text-[var(--muted)] mt-2">WebRTC connection has dropped or signaling was occupied.</p>
+        </div>
+        <div class="flex flex-col gap-2">
+          <button onclick="tryConnectionRecovery()" class="brutal-btn bg-[var(--yellow)] p-3 font-mono-custom uppercase font-bold text-xs">
+            Try Reconnecting Again
+          </button>
+          <button onclick="generateNewRoomSession()" class="brutal-btn bg-[var(--surface)] p-3 font-mono-custom uppercase font-bold text-xs">
+            Generate New Room Ticket
+          </button>
+        </div>
+      </div>
+    </section>
+
   </main>
 
-  <!-- Editorial Info/Privacy Footer (Inverted look) -->
-  <footer class="w-full max-w-7xl mx-auto px-4 mt-6">
-    <div class="bg-[var(--ink)] text-[var(--paper)] brutal-border p-6 brutal-shadow flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-      <div class="flex flex-col gap-1">
-        <div class="font-mono-custom text-xs font-bold text-[var(--yellow)] uppercase tracking-widest">EZ-DROP P2P PROTOCOL</div>
-        <p class="text-xs opacity-80 max-w-xl">
-          Files are sliced into chunks and streamed directly between browsers via secure, DTLS-encrypted WebRTC channels. 
-          No middle server, no cloud quotas, absolutely free of any data interception.
-        </p>
-      </div>
-      <div class="flex gap-4 text-xs font-mono-custom">
-        <a href="#menu-help" onclick="toggleMenu(); showMenuSection('about')" class="hover:underline text-[var(--yellow)] uppercase font-bold">Privacy Audit</a>
+  <!-- Simplified Privacy Line Helper Footer -->
+  <footer class="w-full max-w-6xl mx-auto px-4 mt-auto">
+    <div class="bg-[var(--ink)] text-[var(--paper)] brutal-border p-4 brutal-shadow flex justify-between items-center flex-col sm:flex-row gap-3">
+      <span class="text-xs font-mono-custom opacity-90 text-center sm:text-left">
+        Direct browser-to-browser P2P transfer. No middle upload servers.
+      </span>
+      <div class="flex gap-4 text-[10px] font-mono-custom uppercase tracking-wider font-bold">
+        <a href="#menu-help" onclick="toggleMenu(); showMenuSection('help')" class="hover:underline text-[var(--yellow)]">Connection Help</a>
         <span>•</span>
-        <a href="#menu-setup" onclick="toggleMenu(); showMenuSection('help')" class="hover:underline text-[var(--violet)] uppercase font-bold">Setup Guides</a>
+        <a href="#menu-about" onclick="toggleMenu(); showMenuSection('about')" class="hover:underline text-[var(--violet)]">How It Works</a>
       </div>
     </div>
   </footer>
@@ -410,16 +451,16 @@
       
       <!-- Drawer Header -->
       <div class="flex justify-between items-center border-b-2 border-[var(--ink)] pb-4">
-        <h2 class="serif-display text-2xl font-bold">ez-drop Menu</h2>
-        <button onclick="toggleMenu()" class="brutal-btn bg-[var(--surface-warm)] p-2" aria-label="Close menu">
+        <h2 class="serif-display text-2xl font-bold">Secondary Actions</h2>
+        <button onclick="toggleMenu()" class="brutal-btn bg-[var(--surface-warm)] p-2" aria-label="Close menu" id="close-menu-btn">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
-      <!-- Drawer List Sections -->
+      <!-- Drawer Content -->
       <div class="flex-grow py-6 flex flex-col gap-6">
         
-        <!-- Preferences Block -->
+        <!-- Rename Device Configuration -->
         <div class="bg-[var(--surface)] brutal-border p-4 brutal-shadow-sm flex flex-col gap-3">
           <h3 class="font-mono-custom text-xs uppercase text-[var(--muted)] font-bold tracking-wider">Device Customization</h3>
           <div class="flex flex-col gap-2">
@@ -428,45 +469,46 @@
           </div>
           
           <div class="flex items-center justify-between border-t border-[var(--muted-paper)] pt-3 mt-1">
-            <label for="sound-toggle" class="text-xs font-mono-custom">Chimes & Audio Indicators</label>
+            <label for="sound-toggle" class="text-xs font-mono-custom font-bold">Chimes & Audio Alerts</label>
             <button id="sound-toggle" onclick="toggleSoundPreference()" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-xs font-mono-custom font-bold uppercase">
               Muted
             </button>
           </div>
         </div>
 
-        <!-- Optional Passphrase Check Box -->
+        <!-- Passphrase Gateway Check Card -->
         <div class="bg-[var(--surface-warm)] brutal-border p-4 brutal-shadow-sm flex flex-col gap-3">
           <div class="flex justify-between items-center">
             <h3 class="font-mono-custom text-xs uppercase text-[var(--ink)] font-bold tracking-wider">Passphrase Security</h3>
             <span class="text-[9px] font-mono-custom bg-[var(--gold)] text-black px-1.5 py-0.5 rounded-sm">Optional</span>
           </div>
-          <p class="text-[11px] font-mono-custom text-[var(--muted)]">Requires peers matching the room to authenticate with matching words before sharing files.</p>
+          <p class="text-[11px] font-mono-custom text-[var(--muted)]">Require peers matching your room ticket to authenticate with matching words before sharing files.</p>
           <div class="flex flex-col gap-2">
             <input type="password" id="passphrase-input" placeholder="e.g. secret-token" class="bg-[var(--paper)] brutal-border p-2 font-mono-custom text-xs focus:outline-none" oninput="handlePassphraseChange(this.value)">
-            <p class="text-[9px] font-mono-custom text-[var(--muted)]">Crypto-secured challenge check. Handshake verified before accepting invitations.</p>
+            <p class="text-[9px] font-mono-custom text-[var(--muted)]">Verify shared passphrase check with local challenge handshake.</p>
           </div>
         </div>
 
-        <!-- Application Quick Tools -->
+        <!-- Application Configuration Tools -->
         <div class="flex flex-col gap-2">
-          <button id="pwa-install-btn" onclick="triggerPwaInstall()" class="brutal-btn bg-[var(--gold)] text-black p-3 font-mono-custom uppercase text-xs font-bold tracking-wider text-left flex items-center justify-between">
+          <!-- Install Button (Disabled by default, listens for prompt) -->
+          <button id="pwa-install-btn" onclick="triggerPwaInstall()" class="brutal-btn bg-[var(--gold)] text-black p-3 font-mono-custom uppercase text-xs font-bold tracking-wider text-left flex items-center justify-between opacity-50 cursor-not-allowed" disabled>
             <span>Install ez-drop PWA</span>
             <i data-lucide="download-cloud" class="w-4 h-4"></i>
           </button>
           
-          <button onclick="toggleDebugMode()" id="debug-mode-btn" class="brutal-btn bg-[var(--violet)] text-black p-3 font-mono-custom uppercase text-xs font-bold tracking-wider text-left flex items-center justify-between">
+          <div class="flex justify-between items-center text-xs font-mono-custom px-1.5 py-1">
+            <span class="font-bold uppercase tracking-wider text-[10px] text-[var(--muted)]">PWA Service Worker:</span>
+            <span id="pwa-status-tag" class="bg-[var(--red)] text-white px-2 py-0.5 rounded-sm uppercase text-[9px] font-bold">Offline Disabled</span>
+          </div>
+
+          <button onclick="toggleDebugMode()" id="debug-mode-btn" class="brutal-btn bg-[var(--violet)] text-black p-3 font-mono-custom uppercase text-xs font-bold tracking-wider text-left flex items-center justify-between mt-2">
             <span>Open P2P Simulator / Debug</span>
             <i data-lucide="bug" class="w-4 h-4"></i>
           </button>
-
-          <button onclick="openPreflightPermissions()" class="brutal-btn bg-[var(--surface)] text-black p-3 font-mono-custom uppercase text-xs font-bold tracking-wider text-left flex items-center justify-between">
-            <span>Preflight Permissions (Camera)</span>
-            <i data-lucide="shield-check" class="w-4 h-4"></i>
-          </button>
         </div>
 
-        <!-- Informational Collapsibles -->
+        <!-- Accompanying Help Accordions -->
         <div class="flex flex-col gap-2">
           <details class="bg-[var(--surface)] brutal-border p-3 cursor-pointer group" id="menu-help">
             <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
@@ -474,65 +516,61 @@
               <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
             </summary>
             <div class="pt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
-              <p>1. Open this page on two devices (desktop, phone, tablet).</p>
-              <p>2. Share the 5-digit Room Code with the secondary device.</p>
-              <p>3. Enter the code, click Connect, then click 'Accept' on the host device.</p>
-              <p>4. <strong>NAT/Firewall issue?</strong> Corporate firewalls or restrictive networks can block WebRTC direct ports. Try switching off school/work Wi-Fi to mobile data hotspots if connections continuously fail.</p>
+              <p>1. Open this page on two devices.</p>
+              <p>2. Enter the host's 5-digit Room Code on the connector device, or scan their QR code.</p>
+              <p>3. Tap 'Accept' on the host device modal once prompted.</p>
+              <p>4. If WebRTC fails, swap restrictive Wi-Fi profiles to cellular hotspots.</p>
+              <button onclick="copyHelpToClipboard()" class="brutal-btn bg-[var(--paper)] p-2 mt-1 text-[10px] uppercase font-bold tracking-wider">Copy Connection Help details</button>
             </div>
           </details>
 
           <details class="bg-[var(--surface)] brutal-border p-3 cursor-pointer group" id="menu-about">
             <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
-              <span>Privacy & Storage Audit</span>
+              <span>Privacy Audit</span>
               <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
             </summary>
             <div class="pt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
-              <p>• <strong>zero-storage</strong>: We never store files. File data streams in slices directly through your WebRTC channel in memory. Once completed, your browser saves it down instantly to disk.</p>
-              <p>• <strong>direct encryption</strong>: WebRTC traffic uses mandated peer-to-peer DTLS/SRTP cryptography.</p>
+              <p>• <strong>Zero Storage</strong>: No files are hosted on public index databases. They process locally as RAM streams directly to the browser anchor client.</p>
+              <p>• <strong>P2P Cryptography</strong>: Transmission uses mandatory WebRTC DTLS/SRTP cryptography wrappers.</p>
             </div>
           </details>
         </div>
 
       </div>
 
-      <!-- Drawer Footer with Reset State -->
+      <!-- Drawer Footer -->
       <div class="border-t-2 border-[var(--ink)] pt-4 flex justify-between items-center text-xs font-mono-custom">
         <span class="opacity-60">v1.2.0-stable</span>
-        <button onclick="factoryResetApp()" class="text-[var(--red)] uppercase font-bold hover:underline">Reset App Cache</button>
+        <button onclick="factoryResetApp()" class="text-[var(--red)] uppercase font-bold hover:underline">Reset App cache</button>
       </div>
 
     </div>
   </div>
 
-  <!-- QR SCANNER CAMERA MODAL -->
+  <!-- QR SCANNER MODAL -->
   <div id="scanner-modal" class="fixed inset-0 bg-black/80 z-50 backdrop-blur-xs hidden flex items-center justify-center p-4">
     <div class="bg-[var(--paper)] w-full max-w-md brutal-border brutal-shadow p-6 flex flex-col gap-4">
       <div class="flex justify-between items-center border-b-2 border-[var(--ink)] pb-3">
         <h3 class="serif-display text-xl font-bold">QR Camera Scan</h3>
-        <button onclick="closeQRScanner()" class="brutal-btn bg-[var(--surface-warm)] p-1.5" aria-label="Close scanner">
+        <button onclick="closeQRScanner()" class="brutal-btn bg-[var(--surface-warm)] p-1.5" aria-label="Close scanner" id="close-scanner-btn">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
       
-      <!-- Video stream camera canvas -->
       <div id="interactive-reader" class="w-full aspect-square bg-black brutal-border relative overflow-hidden flex items-center justify-center">
-        <!-- Target Reticle overlay -->
         <div class="absolute inset-8 border-2 border-dashed border-[var(--yellow)] pointer-events-none opacity-80 z-10 animate-pulse"></div>
-        <div class="text-white text-xs font-mono-custom text-center p-4">Opening camera source...</div>
+        <div class="text-white text-xs font-mono-custom text-center p-4">Opening camera stream...</div>
       </div>
-
-      <p class="text-xs font-mono-custom text-[var(--muted)] text-center">Center the partner qr code within the target box to instantly parse credentials.</p>
-      
+      <p class="text-xs font-mono-custom text-[var(--muted)] text-center">Center the partner QR code in the grid to connect.</p>
       <button onclick="closeQRScanner()" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] p-3 font-mono-custom uppercase text-xs font-bold text-center">
         Cancel Scan
       </button>
     </div>
   </div>
 
-  <!-- INCOMING CONNECTION INVITATION PANEL MODAL -->
+  <!-- INCOMING CONNECTION INVITATION MODAL -->
   <div id="invite-modal" class="fixed inset-0 bg-black/70 z-50 backdrop-blur-xs hidden flex items-center justify-center p-4">
-    <div class="bg-[var(--surface-warm)] w-full max-w-sm brutal-border brutal-shadow-lg p-6 relative">
-      <!-- Tape graphic -->
+    <div class="bg-[var(--surface-warm)] w-full max-w-sm brutal-border brutal-shadow-lg p-6 relative" id="invite-focus-holder">
       <div class="absolute -top-3 left-8 w-24 h-6 bg-[rgba(255,77,77,0.4)] border border-dashed border-[var(--ink)] rotate-[2deg]"></div>
       
       <div class="text-center flex flex-col gap-4 mt-2">
@@ -540,26 +578,27 @@
           <i data-lucide="handshake" class="w-6 h-6"></i>
         </div>
         <div>
-          <h3 class="serif-display text-xl font-bold">Connection Request!</h3>
-          <p class="text-xs font-mono-custom text-[var(--muted)] mt-1">An outside peer requests file-channel synchronization.</p>
+          <h3 class="serif-display text-xl font-bold">Connection Request</h3>
+          <p class="text-xs font-mono-custom text-[var(--muted)] mt-1">An outside peer wants to establish direct channels.</p>
         </div>
 
-        <div class="bg-[var(--paper)] brutal-border p-4">
-          <div class="text-xs font-mono-custom uppercase tracking-wider text-[var(--muted)]">Requesting Node:</div>
-          <div id="invite-peer-name" class="serif-display font-extrabold text-lg">Anonymous Beaver</div>
-          <div id="invite-peer-meta" class="text-[10px] font-mono-custom text-[var(--muted)] mt-1">ID: ezdrop-peer-xxxx</div>
+        <div class="bg-[var(--surface)] brutal-border p-4 text-center">
+          <span id="invite-peer-name" class="serif-display font-extrabold text-lg">Anonymous Beaver</span>
+          <details class="mt-2 text-left">
+            <summary class="text-[10px] font-mono-custom text-[var(--muted)] uppercase cursor-pointer text-center select-none">Show technical details</summary>
+            <div id="invite-peer-meta" class="text-[9px] font-mono-custom text-[var(--muted)] mt-2 break-all bg-[var(--paper)] p-1 border border-dashed border-[var(--ink)]">ID: unknown</div>
+          </details>
         </div>
 
-        <!-- Custom Warning if Room Code is connected with Self -->
         <div id="self-connect-warning" class="hidden text-left bg-[var(--yellow)] brutal-border p-2 font-mono-custom text-[10px]">
-          <strong>Notice:</strong> This request originates from your own device namespace. We recommend starting **Debug Mode** from the menu to test loopbacks.
+          <strong>Notice:</strong> This ID matches your own device namespace. Use **Debug Mode** from the menu to simulate.
         </div>
 
-        <div class="grid grid-cols-2 gap-3 mt-2">
+        <div class="grid grid-cols-2 gap-3 mt-1">
           <button onclick="respondToInvitation(false)" class="brutal-btn bg-[var(--paper)] py-2.5 font-mono-custom uppercase text-xs font-bold">
             Decline
           </button>
-          <button onclick="respondToInvitation(true)" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] py-2.5 font-mono-custom uppercase text-xs font-bold">
+          <button onclick="respondToInvitation(true)" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] py-2.5 font-mono-custom uppercase text-xs font-bold" id="accept-invite-btn">
             Accept
           </button>
         </div>
@@ -567,22 +606,22 @@
     </div>
   </div>
 
-  <!-- DEBUG P2P SIMULATOR OVERLAY -->
+  <!-- DEBUG P2P SIMULATOR OVERLAY (Lazy loaded) -->
   <div id="debug-modal" class="fixed inset-0 bg-black/80 z-50 backdrop-blur-xs hidden overflow-y-auto p-4">
-    <div class="w-full max-w-4xl bg-[var(--paper)] mx-auto my-6 brutal-border brutal-shadow-lg p-6 flex flex-col gap-4 relative">
+    <div class="w-full max-w-4xl bg-[var(--paper)] mx-auto my-6 brutal-border brutal-shadow-lg p-6 flex flex-col gap-4 relative" id="debug-focus-holder">
       <div class="flex justify-between items-center border-b-2 border-[var(--ink)] pb-3">
         <div class="flex items-center gap-3">
           <span class="bg-[var(--violet)] p-1 px-3 border-2 border-[var(--ink)] brutal-shadow-sm font-mono-custom text-xs font-bold rotate-[-1deg]">SIMULATOR ACTIVE</span>
           <h2 class="serif-display text-2xl font-bold">P2P In-Memory Sandbox</h2>
         </div>
-        <button onclick="toggleDebugMode()" class="brutal-btn bg-[var(--surface-warm)] p-1.5" aria-label="Close debug modal">
+        <button onclick="toggleDebugMode()" class="brutal-btn bg-[var(--surface-warm)] p-1.5" aria-label="Close debug modal" id="close-debug-btn">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
       <div class="bg-[var(--yellow)] brutal-border p-3 font-mono-custom text-xs flex items-center gap-2">
         <i data-lucide="info" class="w-4 h-4"></i>
-        <span>This loopback emulator bypasses public PeerJS STUN signaling to mimic two connected peers instantly inside your local tab. Ideal for functional offline flow testing.</span>
+        <span>This loopback simulator bypasses public PeerJS STUN signaling to mimic two connected peers instantly inside your local tab.</span>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
@@ -642,7 +681,7 @@
     </div>
   </div>
 
-  <!-- APPLICATION JAVASCRIPT ARCHITECTURE -->
+  <!-- APPLICATION CORE ARCHITECTURE -->
   <script>
     // --- APP CONSTANTS & ALGORITHMS ---
     const APP_VERSION = "1.2.0";
@@ -664,10 +703,9 @@
       peer: null,               // PeerJS Instance
       conn: null,               // Current active PeerJS DataConnection
       connectedPeer: null,      // Name / Metadata details of active Peer
-      connectionState: "DISCONNECTED", // DISCONNECTED, CREATING, WAITING, INVITING, PASSWORD_CHECK, CONNECTED, RECONNECTING
+      connectionState: "DISCONNECTED", // DISCONNECTED, CREATING, WAITING, CONNECTING, INVITING, PASSWORD_CHECK, CONNECTED, ERROR
       passwordEnabled: false,
       passphrase: "",
-      theme: "light",
       soundEnabled: false,
       installPrompt: null,      // PWA deferred prompt
       outgoingTransfers: new Map(), // transferId -> State Obj
@@ -683,6 +721,55 @@
         B: { name: "Neon Owl", incoming: new Map(), outgoing: new Map() }
       }
     };
+
+    // --- SERVICE WORKER & DYNAMIC MANIFEST REGISTRATION ---
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        // Build base path dynamically to avoid breaking under custom GitHub Pages subfolders
+        const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
+        const swUrl = basePath + 'sw.js';
+        
+        navigator.serviceWorker.register(swUrl, { scope: basePath })
+          .then(reg => {
+            console.log('ez-drop Service Worker successfully registered with scope:', reg.scope);
+            const statusTag = document.getElementById("pwa-status-tag");
+            if (statusTag) {
+              statusTag.textContent = "Offline Ready";
+              statusTag.className = "bg-[#1F8A4C] text-white px-2 py-0.5 rounded-sm uppercase text-[9px] font-bold";
+            }
+          })
+          .catch(err => {
+            console.warn('Service Worker registration skipped or failed:', err);
+          });
+      });
+    }
+
+    // Dynamic Manifest Injection
+    const manifest = {
+      name: "ez-drop P2P Sharing Tool",
+      short_name: "ez-drop",
+      start_url: "./",
+      display: "standalone",
+      background_color: "#F9F8F6",
+      theme_color: "#F9F8F6",
+      icons: [
+        {
+          src: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23FFD93D'/><text x='50%' y='60%' font-size='40' font-weight='bold' font-family='sans-serif' text-anchor='middle' fill='%23111111'>ez</text></svg>",
+          sizes: "192x192",
+          type: "image/svg+xml"
+        },
+        {
+          src: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23FFD93D'/><text x='50%' y='60%' font-size='40' font-weight='bold' font-family='sans-serif' text-anchor='middle' fill='%23111111'>ez</text></svg>",
+          sizes: "512x512",
+          type: "image/svg+xml"
+        }
+      ]
+    };
+    const blobManifest = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
+    manifestLink.href = URL.createObjectURL(blobManifest);
+    document.head.appendChild(manifestLink);
 
     // --- WEB AUDIO SYNTHESIZER SOUND ENGINE ---
     let audioCtx = null;
@@ -703,57 +790,45 @@
         const now = audioCtx.currentTime;
 
         if (type === "connect") {
-          // Double upbeat pulse chime
           const osc = audioCtx.createOscillator();
           const gainNode = audioCtx.createGain();
           osc.connect(gainNode);
           gainNode.connect(audioCtx.destination);
-          
           osc.type = "sine";
           osc.frequency.setValueAtTime(523.25, now); // C5
           osc.frequency.setValueAtTime(659.25, now + 0.12); // E5
-          
           gainNode.gain.setValueAtTime(0.15, now);
           gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
-          
           osc.start(now);
           osc.stop(now + 0.4);
         } else if (type === "complete") {
-          // Triad major cascade chime
           const osc = audioCtx.createOscillator();
           const gainNode = audioCtx.createGain();
           osc.connect(gainNode);
           gainNode.connect(audioCtx.destination);
-          
           osc.type = "triangle";
           osc.frequency.setValueAtTime(523.25, now); // C5
           osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
           osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
-          
           gainNode.gain.setValueAtTime(0.15, now);
           gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-          
           osc.start(now);
           osc.stop(now + 0.5);
         } else if (type === "error") {
-          // Low flat buzz down chime
           const osc = audioCtx.createOscillator();
           const gainNode = audioCtx.createGain();
           osc.connect(gainNode);
           gainNode.connect(audioCtx.destination);
-          
           osc.type = "sawtooth";
           osc.frequency.setValueAtTime(220.00, now); // A3
           osc.frequency.linearRampToValueAtTime(110.00, now + 0.25);
-          
           gainNode.gain.setValueAtTime(0.1, now);
           gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-          
           osc.start(now);
           osc.stop(now + 0.3);
         }
       } catch (err) {
-        console.error("Audio synthesise crash minimized:", err);
+        console.error("Audio synthesizer exception captured:", err);
       }
     }
 
@@ -762,38 +837,38 @@
       // 1. Initialize user device name details
       restoreDeviceIdentity();
 
-      // 2. Setup theme settings from system or storage
-      initTheme();
-
-      // 3. Render Lucide Icons
+      // 2. Render Lucide Icons
       lucide.createIcons();
 
-      // 4. Listen to PWA hooks
+      // 3. Listen to PWA hooks
       setupPwaHooks();
 
-      // 5. Parse search params in URL automatically
+      // 4. Parse search params in URL automatically
       const params = new URLSearchParams(window.location.search);
       const incomingRoom = params.get("r");
 
       if (incomingRoom && incomingRoom.match(/^\d{5}$/)) {
         // Target incoming auto room setup
-        state.roomCode = generateRandomRoomCode(); // Keep local identifier
-        initPeerSession(incomingRoom); // Try directly connecting
+        state.roomCode = generateRandomRoomCode();
+        initPeerSession(incomingRoom);
       } else {
         // Normal host init
         state.roomCode = generateRandomRoomCode();
         initPeerSession();
       }
 
-      // 6. Bind Drag and Drop listeners
+      // 5. Bind Drag and Drop listeners
       setupDragAndDrop();
 
-      // 7. Test for native share
+      // 6. Test for native share
       if (navigator.share) {
         const shareBtn = document.getElementById("native-share-btn");
         shareBtn.removeAttribute("disabled");
         shareBtn.classList.remove("opacity-50", "cursor-not-allowed");
       }
+
+      // 7. Accessibility setup: keyboard trap/escape listeners
+      setupAccessibilityEscListeners();
     });
 
     function generateRandomRoomCode() {
@@ -822,9 +897,8 @@
       document.getElementById("device-name-input").value = sanitized;
       document.getElementById("menu-device-name").value = sanitized;
 
-      // Broadcast changes if actively connected
       if (state.conn && state.connectionState === "CONNECTED") {
-        sendMessageToPeer({
+        state.conn.send({
           type: "peer-status",
           payload: { name: sanitized }
         });
@@ -855,9 +929,9 @@
       txt.textContent = msg;
       bar.classList.remove("hidden");
       if (type === "error") {
-        bar.className = "brutal-border bg-[#CC0000] text-white p-3 text-center font-mono-custom text-xs relative z-50";
+        bar.className = "brutal-border bg-[var(--correction)] text-black p-3 text-center font-mono-custom text-xs relative z-50 font-bold";
       } else {
-        bar.className = "brutal-border bg-[#1F8A4C] text-white p-3 text-center font-mono-custom text-xs relative z-50";
+        bar.className = "brutal-border bg-[var(--ok)] text-white p-3 text-center font-mono-custom text-xs relative z-50 font-bold";
       }
     }
 
@@ -885,28 +959,29 @@
       if (navigator.share) {
         navigator.share({
           title: 'ez-drop P2P Transfer',
-          text: `Connect to my room directly inside ez-drop to exchange data safely.`,
+          text: `Connect directly to my ez-drop workspace to exchange data.`,
           url: state.shareUrl
         }).catch(err => {
-          console.log("Native share failed: ", err);
+          console.log("Native share cancelled.");
         });
       }
     }
 
-    // --- PWA CAPABILITIES ---
+    // --- PWA INSTANT PROMPT CAPABILITIES ---
     function setupPwaHooks() {
       window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         state.installPrompt = e;
         const installBtn = document.getElementById("pwa-install-btn");
         if (installBtn) {
-          installBtn.classList.remove("hidden");
+          installBtn.removeAttribute("disabled");
+          installBtn.classList.remove("opacity-50", "cursor-not-allowed");
         }
       });
 
       window.addEventListener('appinstalled', () => {
         state.installPrompt = null;
-        console.log("App installed successfully");
+        console.log("PWA application installed successfully");
       });
     }
 
@@ -915,47 +990,32 @@
         state.installPrompt.prompt();
         state.installPrompt.userChoice.then((choiceResult) => {
           if (choiceResult.outcome === 'accepted') {
-            console.log('User accepted install prompt');
+            console.log('User completed PWA installation prompt');
           }
           state.installPrompt = null;
         });
       } else {
-        showGlobalAlert("To install, use your browser's context menu > Add to Home Screen.", "info");
+        // Fallback for unsupported devices (progressive manual instructions)
+        let isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIOS) {
+          showGlobalAlert("Install Guide (iOS): Tap the Share icon, then select 'Add to Home Screen'.", "info");
+        } else {
+          showGlobalAlert("Install Guide (Desktop/Android): Open the browser Menu > Install ez-drop / Add to Home screen.", "info");
+        }
       }
     }
 
-    // --- THEME / DARK MODE TOGGLING ---
-    function initTheme() {
-      const localTheme = localStorage.getItem("ezdrop_theme");
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      if (localTheme === "dark" || (!localTheme && prefersDark)) {
-        document.body.classList.add("dark-mode");
-        state.theme = "dark";
-        updateThemeUI(true);
-      } else {
-        document.body.classList.remove("dark-mode");
-        state.theme = "light";
-        updateThemeUI(false);
-      }
-    }
-
-    function toggleTheme() {
-      const isDark = document.body.classList.toggle("dark-mode");
-      state.theme = isDark ? "dark" : "light";
-      localStorage.setItem("ezdrop_theme", state.theme);
-      updateThemeUI(isDark);
-    }
-
-    function updateThemeUI(isDark) {
-      const sun = document.getElementById("theme-icon-light");
-      const moon = document.getElementById("theme-icon-dark");
-      if (isDark) {
-        sun.classList.add("hidden");
-        moon.classList.remove("hidden");
-      } else {
-        sun.classList.remove("hidden");
-        moon.classList.add("hidden");
-      }
+    // --- ACCESSIBILITY FOCUS / INTERACT MECHANICS ---
+    function setupAccessibilityEscListeners() {
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          // Close all modals or sheets
+          document.getElementById("side-menu").classList.add("hidden");
+          closeQRScanner();
+          document.getElementById("invite-modal").classList.add("hidden");
+          toggleDebugMode(false);
+        }
+      });
     }
 
     // --- SLIDEOVER SIDE MENU CONTROLS ---
@@ -963,8 +1023,7 @@
       const menu = document.getElementById("side-menu");
       if (menu.classList.contains("hidden")) {
         menu.classList.remove("hidden");
-        // Traps focus inside
-        document.getElementById("menu-device-name").focus();
+        document.getElementById("close-menu-btn").focus();
       } else {
         menu.classList.add("hidden");
       }
@@ -996,15 +1055,11 @@
       }
     }
 
-    function openPreflightPermissions() {
-      navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => {
-          showGlobalAlert("Camera permissions granted successfully!", "info");
-          stream.getTracks().forEach(track => track.stop());
-        })
-        .catch(err => {
-          showGlobalAlert("Camera check failed. Verify privacy permissions in system preferences.", "error");
-        });
+    function copyHelpToClipboard() {
+      const text = "To exchange files, open ez-drop on both devices. On the connector client, enter the 5-digit code or scan the host's QR code. Agree to connect on the host's popup prompt.";
+      navigator.clipboard.writeText(text).then(() => {
+        showGlobalAlert("Help guide copied to clipboard!", "info");
+      });
     }
 
     function factoryResetApp() {
@@ -1038,19 +1093,81 @@
       handlePassphraseChange("");
     }
 
+    // --- DYNAMIC APPLICATION STATE STATE-RENDER ---
+    function renderAppByState(targetState, diagnosticMsg = "") {
+      state.connectionState = targetState;
+
+      // DOM target elements mapping
+      const panels = {
+        ready: document.getElementById("state-ready"),
+        connecting: document.getElementById("state-connecting"),
+        connected: document.getElementById("state-connected"),
+        error: document.getElementById("state-error")
+      };
+
+      // Hide all panels initially
+      Object.keys(panels).forEach(key => {
+        if (panels[key]) panels[key].classList.add("hidden");
+      });
+
+      // Update header indicators
+      const headerStatus = document.getElementById("header-status-lbl");
+      const dot = document.getElementById("status-dot");
+      const dotPulse = document.getElementById("status-dot-pulse");
+      const ariaStatus = document.getElementById("aria-status");
+
+      // Set class defaults
+      dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--gold)]";
+      dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--gold)] opacity-75";
+
+      switch (targetState) {
+        case "DISCONNECTED":
+        case "READY":
+          panels.ready.classList.remove("hidden");
+          headerStatus.textContent = "Signaling Ready";
+          dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[#1F8A4C]";
+          dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
+          ariaStatus.textContent = "Signaling ready to connect.";
+          document.getElementById("ready-status-desc").textContent = "Waiting for entry";
+          break;
+
+        case "CONNECTING":
+          panels.connecting.classList.remove("hidden");
+          headerStatus.textContent = "Connecting";
+          dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--yellow)]";
+          dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--yellow)] opacity-75";
+          document.getElementById("connecting-state-desc").textContent = diagnosticMsg || "Connecting to target namespace...";
+          ariaStatus.textContent = "Establishing client WebRTC session.";
+          break;
+
+        case "CONNECTED":
+          panels.connected.classList.remove("hidden");
+          headerStatus.textContent = "CONNECTED";
+          dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[#1F8A4C]";
+          dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
+          ariaStatus.textContent = `Direct connection streaming active with peer.`;
+          break;
+
+        case "ERROR":
+          panels.error.classList.remove("hidden");
+          headerStatus.textContent = "OFFLINE/ERROR";
+          dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--red)]";
+          dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--red)] opacity-75";
+          document.getElementById("error-state-desc").textContent = diagnosticMsg || "WebRTC port connection failed.";
+          ariaStatus.textContent = "Connection dropped. Try again.";
+          break;
+      }
+    }
+
     // --- PEERJS ENGINE (WebRTC Coordination) ---
     function initPeerSession(targetConnectCode = null) {
-      // Clean previous configurations
       if (state.peer) {
         state.peer.destroy();
       }
 
-      updateStatusUI("CREATING");
-
-      // Generate host node id
+      // Explicitly determine host or joiner PeerJS ID structure
       const peerId = targetConnectCode ? `${PEER_PREFIX}peer-${Math.random().toString(36).substr(2, 6)}` : `${ROOM_PREFIX}${state.roomCode}`;
 
-      // Initialize global PeerJS Cloud service node
       state.peer = new Peer(peerId, {
         config: {
           iceServers: [
@@ -1062,21 +1179,19 @@
       });
 
       state.peer.on("open", (id) => {
-        console.log("My PeerJS dynamic room address initialized as ID:", id);
+        console.log("My PeerJS dynamic ID registered:", id);
         
         if (targetConnectCode) {
-          // Joiner execution path: Directly attempt handshake to the derived target
-          updateStatusUI("CONNECTING");
+          renderAppByState("CONNECTING", `Directly calling Room Code ${targetConnectCode}...`);
           initiateDirectHandshake(`${ROOM_PREFIX}${targetConnectCode}`);
         } else {
-          // Host execution path
           updateRoomTicket(state.roomCode);
-          updateStatusUI("WAITING");
+          renderAppByState("READY");
         }
       });
 
       state.peer.on("connection", (incomingConn) => {
-        // Multi-peer protection: Clean previous dead sessions if incoming takes precedence
+        // Multi-peer protection: Clean dead sessions if active connection exists
         if (state.conn) {
           incomingConn.close();
           return;
@@ -1085,49 +1200,66 @@
       });
 
       state.peer.on("error", (err) => {
-        console.error("PeerJS dynamic error caught:", err.type, err);
+        console.error("PeerJS native error caught:", err.type, err);
         
         if (err.type === "unavailable-id") {
-          // Fallback algorithm: If room ID exists on servers, maybe another browser tab owned it.
-          // Let's attempt auto-joining it as a peer client dynamically instead of failing.
-          console.warn("Target code occupied. Redirecting to join mode instead of host.");
-          initiateDirectHandshake(`${ROOM_PREFIX}${state.roomCode}`);
+          // If the room code was taken, regenerate code *once* and retry
+          state.roomCode = generateRandomRoomCode();
+          initPeerSession();
         } else if (err.type === "peer-unavailable") {
-          showGlobalAlert("Connection failed. Target room key not found on public index.", "error");
-          updateStatusUI("DISCONNECTED");
+          renderAppByState("ERROR", "Target room key not found. Verify the code on the host device.");
         } else {
-          showGlobalAlert(`Network socket interrupt: ${err.message}`, "error");
-          updateStatusUI("DISCONNECTED");
+          renderAppByState("ERROR", `Socket connection error: ${err.message}`);
         }
       });
 
       state.peer.on("disconnected", () => {
-        console.warn("Peer server connection dropped. Retrying reconnect mechanics...");
+        console.warn("Peer service server disconnected. Retrying connection...");
         state.peer.reconnect();
       });
     }
 
     function initiateDirectHandshake(targetPeerId) {
-      const options = {
-        reliable: true
-      };
+      const options = { reliable: true };
       const activeConn = state.peer.connect(targetPeerId, options);
       setupConnectionCallbacks(activeConn, false);
+    }
+
+    function handleTargetInput(input) {
+      // Clean target non-digits
+      input.value = input.value.replace(/\D/g, '');
+      if (input.value.length === 5) {
+        connectToRoomBtn();
+      }
     }
 
     function connectToRoomBtn() {
       const targetInput = document.getElementById("target-room-input").value.trim();
       if (!targetInput.match(/^\d{5}$/)) {
-        showGlobalAlert("Keys must consist of precisely 5 digits.", "error");
+        showGlobalAlert("Verify Room Code: must consist of precisely 5 digits.", "error");
         return;
       }
       if (targetInput === state.roomCode) {
-        showGlobalAlert("You cannot establish a loopback WebRTC channel with your own host room.", "error");
-        document.getElementById("self-connect-warning").classList.remove("hidden");
+        showGlobalAlert("You cannot establish a WebRTC loopback with your own room code.", "error");
         return;
       }
-      updateStatusUI("CONNECTING");
+      renderAppByState("CONNECTING", `Establishing encrypted channel with room ${targetInput}...`);
       initiateDirectHandshake(`${ROOM_PREFIX}${targetInput}`);
+    }
+
+    // --- RECONNECT & SESSION RECOVERY ---
+    function tryConnectionRecovery() {
+      const targetInput = document.getElementById("target-room-input").value.trim();
+      if (targetInput.match(/^\d{5}$/)) {
+        connectToRoomBtn();
+      } else {
+        initPeerSession();
+      }
+    }
+
+    function generateNewRoomSession() {
+      state.roomCode = generateRandomRoomCode();
+      initPeerSession();
     }
 
     // --- WEBRTC CONNECTION HANDLING PROTOCOL ---
@@ -1135,12 +1267,9 @@
 
     function setupConnectionCallbacks(connInstance, isHost) {
       connInstance.on("open", () => {
-        console.log("Sub-channel DataChannel fully established.");
-        
-        // Setup state holder
         state.conn = connInstance;
 
-        // Challenge-Proof Password Negotiation First
+        // Challenge-Proof Password Handshake Negotiation
         if (state.passwordEnabled) {
           const secretChallenge = Math.random().toString(36).substring(2, 10);
           connInstance.send({
@@ -1152,12 +1281,11 @@
           return;
         }
 
-        // Standard invite logic
         if (isHost) {
-          // Wait for incoming handshake details
-          updateStatusUI("INVITING");
+          // Waiting for invite handshake info
+          renderAppByState("CONNECTING", "Negotiating incoming verification handshake...");
         } else {
-          // Client sends a handshake packet
+          // Client triggers connection handshake packet
           connInstance.send({
             type: "hello",
             from: state.identity.name,
@@ -1183,14 +1311,10 @@
     function processIncomingMessage(msg, connInstance) {
       if (!msg || !msg.type) return;
 
-      console.log("Recv payload:", msg.type, msg);
-
       switch (msg.type) {
         case "password-challenge":
-          // Client evaluates matching state parameters
           if (!state.passwordEnabled) {
-            // Mismatch lock
-            connInstance.send({ type: "file-error", payload: { error: "Security mode mismatch: Remote requires password protection." } });
+            connInstance.send({ type: "file-error", payload: { error: "Security mode mismatch: host requires matching passwords." } });
             connInstance.close();
             return;
           }
@@ -1204,41 +1328,40 @@
           break;
 
         case "password-proof":
-          // Host evaluates client proof
           hashChallenge(msg.payload.challenge, state.passphrase).then(localProof => {
             if (localProof === msg.payload.proof) {
-              // Valid: Send baseline invite state up
               connInstance.send({
                 type: "hello",
                 from: msg.from,
                 payload: { version: APP_VERSION }
               });
             } else {
-              // Kick bad authentication attempt
-              connInstance.send({ type: "file-error", payload: { error: "Authentication failed. Passphrase mismatch." } });
+              connInstance.send({ type: "file-error", payload: { error: "Security verification failed. Mismatched passphrase." } });
               setTimeout(() => connInstance.close(), 500);
             }
           });
           break;
 
         case "hello":
-          // Incoming connection accepted invitation trigger
+          // Open Connection Invitation Popup Modal
           pendingInviteConnection = connInstance;
           document.getElementById("invite-peer-name").textContent = escapeHtml(msg.from);
-          document.getElementById("invite-peer-meta").textContent = `Node: ${connInstance.peer}`;
+          document.getElementById("invite-peer-meta").textContent = `ID: ${connInstance.peer}`;
           document.getElementById("invite-modal").classList.remove("hidden");
+          document.getElementById("accept-invite-btn").focus();
           playSound("connect");
           break;
 
         case "accept":
           state.connectedPeer = { id: connInstance.peer, name: msg.from };
-          updateStatusUI("CONNECTED");
+          renderAppByState("CONNECTED");
+          document.getElementById("peer-name-display").textContent = escapeHtml(msg.from);
           playSound("connect");
           initiatePingLoop();
           break;
 
         case "decline":
-          showGlobalAlert("Connection request was declined by the remote device.", "error");
+          showGlobalAlert("WebRTC handshake was declined by the remote device.", "error");
           terminateSession();
           break;
 
@@ -1280,7 +1403,7 @@
           break;
 
         case "file-error":
-          showGlobalAlert(`Error: ${msg.payload.error}`, "error");
+          showGlobalAlert(`Transmission Error: ${msg.payload.error}`, "error");
           playSound("error");
           break;
       }
@@ -1300,7 +1423,8 @@
           payload: {}
         });
 
-        updateStatusUI("CONNECTED");
+        renderAppByState("CONNECTED");
+        document.getElementById("peer-name-display").textContent = escapeHtml(state.connectedPeer.name);
         playSound("connect");
         initiatePingLoop();
       } else {
@@ -1308,7 +1432,7 @@
         setTimeout(() => {
           pendingInviteConnection.close();
           pendingInviteConnection = null;
-          updateStatusUI("WAITING");
+          renderAppByState("READY");
         }, 200);
       }
     }
@@ -1324,8 +1448,7 @@
       state.conn = null;
       state.connectedPeer = null;
       clearInterval(state.pingIntervalId);
-      updateStatusUI("WAITING");
-      hidePingBadge();
+      renderAppByState("READY");
     }
 
     // --- LATENCY MONITORING PINGS ---
@@ -1342,111 +1465,16 @@
     }
 
     function updatePingIndicator(latency) {
-      const badge = document.getElementById("ping-badge");
-      badge.classList.remove("hidden");
-      badge.textContent = `${latency}ms`;
-
-      const lbl = document.getElementById("network-status");
-      const dot = document.getElementById("pulse-dot");
-      const dotBg = document.getElementById("pulse-dot-bg");
-
-      if (latency < 60) {
-        lbl.textContent = "Excellent Connection";
-        dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#1F8A4C]";
-        dotBg.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
-      } else if (latency < 250) {
-        lbl.textContent = "Good Connection";
-        dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#C97900]";
-        dotBg.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-[#C97900] opacity-75";
-      } else {
-        lbl.textContent = "Slow/Unstable channel";
-        dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#CC0000]";
-        dotBg.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-[#CC0000] opacity-75";
-      }
-    }
-
-    function hidePingBadge() {
-      document.getElementById("ping-badge").classList.add("hidden");
-      document.getElementById("network-status").textContent = "DISCONNECTED";
-      const dot = document.getElementById("pulse-dot");
-      const dotBg = document.getElementById("pulse-dot-bg");
-      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#CC0000]";
-      dotBg.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-[#CC0000] opacity-75";
-    }
-
-    // --- UI GRAPHICAL CONTEXT ADAPTERS ---
-    function updateStatusUI(status) {
-      state.connectionState = status;
-      const statusLbl = document.getElementById("room-status-lbl");
-      const discBtn = document.getElementById("disconnect-btn");
-      const bannerName = document.getElementById("peer-name-display");
-      const peerTag = document.getElementById("peer-status-tag");
-      const peerIndicator = document.getElementById("peer-indicator-dot");
-
-      switch (status) {
-        case "CREATING":
-          statusLbl.textContent = "Spinning up channel...";
-          discBtn.classList.add("hidden");
-          bannerName.textContent = "Negotiating socket...";
-          peerTag.textContent = "OFFLINE";
-          peerIndicator.className = "w-3 h-3 rounded-full bg-[var(--muted)] shrink-0";
-          break;
-
-        case "WAITING":
-          statusLbl.textContent = "Ready: Waiting for entry";
-          discBtn.classList.add("hidden");
-          bannerName.textContent = "Host Listening...";
-          peerTag.textContent = "LISTENING";
-          peerIndicator.className = "w-3 h-3 rounded-full bg-[var(--gold)] shrink-0 animate-pulse";
-          break;
-
-        case "CONNECTING":
-          statusLbl.textContent = "Authenticating...";
-          discBtn.classList.add("hidden");
-          bannerName.textContent = "Direct connecting...";
-          peerTag.textContent = "NEGOTIATING";
-          peerIndicator.className = "w-3 h-3 rounded-full bg-[var(--yellow)] shrink-0";
-          break;
-
-        case "INVITING":
-          statusLbl.textContent = "Invitation waiting...";
-          discBtn.classList.add("hidden");
-          bannerName.textContent = "Connecting...";
-          peerTag.textContent = "INVITATION SENT";
-          peerIndicator.className = "w-3 h-3 rounded-full bg-[var(--yellow)] shrink-0 animate-pulse";
-          break;
-
-        case "PASSWORD_CHECK":
-          statusLbl.textContent = "Verifying passphrase...";
-          discBtn.classList.add("hidden");
-          break;
-
-        case "CONNECTED":
-          statusLbl.textContent = "Synchronized";
-          discBtn.classList.remove("hidden");
-          bannerName.textContent = escapeHtml(state.connectedPeer.name);
-          peerTag.textContent = "CONNECTED";
-          peerIndicator.className = "w-3 h-3 rounded-full bg-[#1F8A4C] shrink-0";
-          break;
-
-        case "DISCONNECTED":
-          statusLbl.textContent = "Offline";
-          discBtn.classList.add("hidden");
-          bannerName.textContent = "No Connected Peer";
-          peerTag.textContent = "DISCONNECTED";
-          peerIndicator.className = "w-3 h-3 rounded-full bg-[#CC0000] shrink-0";
-          break;
+      const badge = document.getElementById("latency-strip");
+      if (badge) {
+        badge.textContent = `${latency}ms`;
       }
     }
 
     function updateRoomTicket(roomCode) {
       document.getElementById("room-code-display").textContent = roomCode;
-      
-      // Update Direct Links
       const loc = window.location;
       state.shareUrl = `${loc.protocol}//${loc.host}${loc.pathname}?r=${roomCode}`;
-      
-      // Refresh QR element Frame
       generateQrLayout(state.shareUrl);
     }
 
@@ -1464,19 +1492,18 @@
         });
         document.getElementById("qr-fallback-msg").classList.add("hidden");
       } catch (err) {
-        console.error("QRCode plugin crashed", err);
+        console.error("QR construction crashed", err);
         document.getElementById("qr-fallback-msg").classList.remove("hidden");
       }
     }
 
-    // --- QR SCANNER (Html5Qrcode Native Camera Control) ---
+    // --- QR SCANNER LAZY LOAD CONTROL ---
     function openQRScanner() {
       const modal = document.getElementById("scanner-modal");
       modal.classList.remove("hidden");
+      document.getElementById("close-scanner-btn").focus();
 
-      // Instance initialization
       state.scannerInstance = new Html5Qrcode("interactive-reader");
-      
       const config = { fps: 10, qrbox: { width: 220, height: 220 } };
 
       state.scannerInstance.start(
@@ -1486,7 +1513,7 @@
         onQrScanFailure
       ).catch(err => {
         console.error("Camera fail:", err);
-        showGlobalAlert("Failed to gain hardware camera stream access.", "error");
+        showGlobalAlert("Failed to initialize system camera hardware.", "error");
         closeQRScanner();
       });
     }
@@ -1498,13 +1525,12 @@
         state.scannerInstance.stop().then(() => {
           state.scannerInstance = null;
         }).catch(err => {
-          console.error("Scanner exit failed", err);
+          console.error("Scanner stream exit failure:", err);
         });
       }
     }
 
     function onQrScanSuccess(decodedText) {
-      console.log("QR Discovered:", decodedText);
       try {
         const url = new URL(decodedText);
         const code = url.searchParams.get("r");
@@ -1513,25 +1539,25 @@
           document.getElementById("target-room-input").value = code;
           connectToRoomBtn();
         } else {
-          showGlobalAlert("Decoded link is not an ez-drop key address.", "error");
+          showGlobalAlert("Invalid ez-drop ticket decoded.", "error");
         }
       } catch (err) {
-        showGlobalAlert("QR is not recognized.", "error");
+        showGlobalAlert("QR format not supported.", "error");
       }
     }
 
     function onQrScanFailure(error) {
-      // Intentionally bypassed to prevent log floods during focus hunting
+      // Ignored for scan stream fluency
     }
 
-    // --- QUICK MESSAGING SYSTEM ---
+    // --- CHAT MESSAGE & TEXT PIPELINE ---
     function sendTextMessage() {
       const txtInput = document.getElementById("text-input");
       const msgText = txtInput.value.trim();
       if (!msgText) return;
 
       if (!state.conn || state.connectionState !== "CONNECTED") {
-        showGlobalAlert("You must connect with a peer before sending direct messages.", "error");
+        showGlobalAlert("Establishing connection required before sending text snippets.", "error");
         return;
       }
 
@@ -1542,6 +1568,7 @@
       });
 
       appendChatBubble(state.identity.name, msgText, true);
+      addHistoryRecord("text", `Text: ${msgText.substring(0, 30)}...`, true);
       txtInput.value = "";
     }
 
@@ -1549,7 +1576,7 @@
       navigator.clipboard.readText().then(clipText => {
         document.getElementById("text-input").value = clipText;
       }).catch(err => {
-        showGlobalAlert("Browser clipboard permission denied manually.", "error");
+        showGlobalAlert("Clipboard permissions denied.", "error");
       });
     }
 
@@ -1599,7 +1626,7 @@
       streamContainer.scrollTop = streamContainer.scrollHeight;
     }
 
-    // --- DRAG AND DROP HANDLING SYSTEM ---
+    // --- FILE DRAG & DROP PIPELINE ---
     function setupDragAndDrop() {
       const dropZone = document.getElementById("drop-zone");
 
@@ -1635,18 +1662,16 @@
 
     function handleFilesArray(files) {
       if (!files || files.length === 0) return;
-      
       if (!state.conn || state.connectionState !== "CONNECTED") {
-        showGlobalAlert("No active recipient. Please connect to a room first to transmit files.", "error");
+        showGlobalAlert("No active WebRTC peer connection.", "error");
         return;
       }
-
       for (let i = 0; i < files.length; i++) {
         initiateOutgoingFileTransfer(files[i]);
       }
     }
 
-    // --- RELIABLE CHUNKED STREAMING PROTOCOL ---
+    // --- RELIABLE ADAPTIVE CHUNK STREAMING ---
     async function initiateOutgoingFileTransfer(file) {
       const transferId = `tx-${Math.random().toString(36).substr(2, 9)}`;
       
@@ -1658,7 +1683,6 @@
         totalChunks: Math.ceil(file.size / CHUNK_SIZE)
       };
 
-      // Register state inside tracking system
       state.outgoingTransfers.set(transferId, {
         file: file,
         meta: fileMeta,
@@ -1667,22 +1691,19 @@
         startTime: Date.now()
       });
 
-      // Render placeholder progress card
       renderTransferCard(transferId, "SENDING", fileMeta);
 
-      // Inform recipient of metadata structures
       state.conn.send({
         type: "file-meta",
         from: state.identity.name,
         payload: fileMeta
       });
 
-      // Spawn streaming background async loops
       try {
         await runAdaptiveBackpressureStream(transferId);
       } catch (err) {
         console.error("Transmitter crashed:", err);
-        handleTransferError(transferId, "Sending routine interupt", true);
+        handleTransferError(transferId, "Streaming connection interrupted", true);
       }
     }
 
@@ -1701,17 +1722,16 @@
       let chunkIdx = 0;
 
       while (offset < file.size) {
-        // Evaluate cancel flags
         const currentObj = state.outgoingTransfers.get(transferId);
         if (!currentObj || currentObj.status === "CANCELLED") {
           return;
         }
 
         // Adaptive Backpressure throttling calculation
-        if (dc && dc.bufferedAmount > 1024 * 1024) { // Threshold: 1MB
+        if (dc && dc.bufferedAmount > 1024 * 1024) { 
           await new Promise(resolve => {
             const pollCheck = () => {
-              if (dc.bufferedAmount < 256 * 1024) { // Drained safely below 256KB
+              if (dc.bufferedAmount < 256 * 1024) { 
                 resolve();
               } else {
                 setTimeout(pollCheck, 30);
@@ -1730,7 +1750,6 @@
           return;
         }
 
-        // Send payload structure over WebRTC DataChannel
         state.conn.send({
           type: "file-chunk",
           payload: {
@@ -1747,7 +1766,6 @@
         updateTransferProgress(transferId, "SENDING", currentObj.sentBytes, file.size);
       }
 
-      // Finish signaling
       state.conn.send({
         type: "file-complete",
         payload: { transferId: transferId }
@@ -1755,14 +1773,14 @@
 
       currentObj.status = "COMPLETE";
       updateTransferProgress(transferId, "COMPLETE", file.size, file.size);
+      addHistoryRecord("file-sent", `${file.name} (${formatBytes(file.size)})`, true);
       playSound("complete");
     }
 
-    // --- RECIPIENT END CHUNK ASSEMBLY ---
+    // --- RECIPIENT FILE HANDLING ---
     function handleFileMetadata(meta) {
-      // Memory Check Alert warning for ultra huge transfers
-      if (meta.size > 800 * 1024 * 1024) { // >800MB Warning
-        showGlobalAlert(`Large incoming file (${(meta.size / (1024*1024)).toFixed(0)}MB). Browser limits may strain in-memory Buffers.`, "info");
+      if (meta.size > 800 * 1024 * 1024) {
+        showGlobalAlert(`Large file incoming (${(meta.size / (1024*1024)).toFixed(0)}MB). Keep browser in foreground.`, "info");
       }
 
       state.incomingTransfers.set(meta.transferId, {
@@ -1795,13 +1813,13 @@
 
       incoming.status = "COMPLETE";
       updateTransferProgress(transferId, "COMPLETE", incoming.meta.size, incoming.meta.size);
+      addHistoryRecord("file-received", `${incoming.meta.name} (${formatBytes(incoming.meta.size)})`, false);
       playSound("complete");
 
       try {
         const fileBlob = new Blob(incoming.chunks, { type: incoming.meta.type });
         const objectUrl = URL.createObjectURL(fileBlob);
         
-        // Expose direct object retrieval URL inside the local node session card
         const downloadBtn = document.getElementById(`dl-btn-${transferId}`);
         if (downloadBtn) {
           downloadBtn.href = objectUrl;
@@ -1809,7 +1827,7 @@
           downloadBtn.classList.remove("hidden");
         }
 
-        // Attempt automated browser pull interaction instantly
+        // Automated download anchor click
         const anchor = document.createElement("a");
         anchor.href = objectUrl;
         anchor.download = incoming.meta.name;
@@ -1818,22 +1836,22 @@
         document.body.removeChild(anchor);
 
       } catch (err) {
-        console.error("Blob formation crashed", err);
-        handleTransferError(transferId, "Blob compilation error", false);
+        console.error("Blob compilation crashed", err);
+        handleTransferError(transferId, "Blob parsing failure", false);
       }
     }
 
-    // --- PROGRESS UI MODIFIERS ---
+    // --- RENDER STREAM TRANSFER PROGRESS CARDS ---
     function renderTransferCard(transferId, direction, meta) {
       document.getElementById("queue-empty-state").classList.add("hidden");
       const container = document.getElementById("transfers-container");
 
       const card = document.createElement("div");
       card.id = `card-${transferId}`;
-      card.className = "brutal-border p-4 bg-[var(--surface)] brutal-shadow-sm flex flex-col gap-2 mb-2 relative";
+      card.className = "brutal-border p-3 bg-[var(--surface)] brutal-shadow-sm flex flex-col gap-2 relative";
 
       const heading = document.createElement("div");
-      heading.className = "flex justify-between items-start gap-2 border-b border-solid border-[var(--ink)] pb-1.5";
+      heading.className = "flex justify-between items-start gap-2 border-b border-[var(--ink)] pb-1";
       
       const titleWrapper = document.createElement("div");
       titleWrapper.className = "min-w-0 flex-grow";
@@ -1843,7 +1861,7 @@
       title.textContent = meta.name;
       
       const specs = document.createElement("div");
-      specs.className = "text-[10px] font-mono-custom text-[var(--muted)] mt-0.5";
+      specs.className = "text-[9px] font-mono-custom text-[var(--muted)]";
       specs.textContent = `${formatBytes(meta.size)} • ${direction}`;
       
       titleWrapper.appendChild(title);
@@ -1852,15 +1870,14 @@
       const actionWrapper = document.createElement("div");
       actionWrapper.className = "flex items-center gap-1.5";
 
-      // Re-download button hidden till finish
       const dlBtn = document.createElement("a");
       dlBtn.id = `dl-btn-${transferId}`;
-      dlBtn.className = "hidden brutal-btn-sm bg-[var(--yellow)] px-2.5 py-1 text-[10px] font-mono-custom font-bold uppercase flex items-center gap-1 text-black";
-      dlBtn.innerHTML = `<i data-lucide="download" class="w-3.5 h-3.5"></i> <span>Save</span>`;
+      dlBtn.className = "hidden brutal-btn-sm bg-[var(--yellow)] px-2 py-0.5 text-[9px] font-mono-custom font-bold uppercase text-black";
+      dlBtn.textContent = "Save";
       
       const cancelBtn = document.createElement("button");
       cancelBtn.id = `cancel-btn-${transferId}`;
-      cancelBtn.className = "brutal-btn-sm bg-[var(--muted-paper)] px-2.5 py-1 text-[10px] font-mono-custom font-bold uppercase text-[var(--red)]";
+      cancelBtn.className = "brutal-btn-sm bg-[var(--muted-paper)] px-2 py-0.5 text-[9px] font-mono-custom font-bold uppercase text-[var(--red)]";
       cancelBtn.textContent = "Cancel";
       cancelBtn.onclick = () => handleTransferCancellation(transferId, true);
 
@@ -1874,7 +1891,7 @@
       progressWrapper.className = "flex flex-col gap-1";
 
       const barOuter = document.createElement("div");
-      barOuter.className = "w-full brutal-border h-4 bg-[var(--muted-paper)] relative overflow-hidden";
+      barOuter.className = "w-full brutal-border h-3.5 bg-[var(--muted-paper)] relative overflow-hidden";
 
       const barInner = document.createElement("div");
       barInner.id = `bar-${transferId}`;
@@ -1883,7 +1900,7 @@
       barOuter.appendChild(barInner);
 
       const footer = document.createElement("div");
-      footer.className = "flex justify-between items-center text-[9px] font-mono-custom uppercase opacity-80 mt-1";
+      footer.className = "flex justify-between items-center text-[9px] font-mono-custom uppercase opacity-80";
       
       const percentVal = document.createElement("span");
       percentVal.id = `percent-${transferId}`;
@@ -1891,7 +1908,7 @@
 
       const speedVal = document.createElement("span");
       speedVal.id = `speed-${transferId}`;
-      speedVal.textContent = "Starting stream...";
+      speedVal.textContent = "Initiating...";
 
       footer.appendChild(percentVal);
       footer.appendChild(speedVal);
@@ -1903,7 +1920,6 @@
       card.appendChild(progressWrapper);
 
       container.prepend(card);
-      lucide.createIcons();
     }
 
     function updateTransferProgress(transferId, direction, current, total) {
@@ -1915,16 +1931,15 @@
       const pct = document.getElementById(`percent-${transferId}`);
       if (pct) pct.textContent = `${percentage}%`;
 
-      // Speed estimations
       const tracker = direction === "SENDING" ? state.outgoingTransfers.get(transferId) : state.incomingTransfers.get(transferId);
       if (tracker) {
-        const timeDiff = (Date.now() - tracker.startTime) / 1000; // secs
-        const currentSpeed = timeDiff > 0 ? (current / timeDiff) : 0; // Bytes/sec
+        const timeDiff = (Date.now() - tracker.startTime) / 1000;
+        const currentSpeed = timeDiff > 0 ? (current / timeDiff) : 0;
         
         const speedText = document.getElementById(`speed-${transferId}`);
         if (speedText) {
           if (percentage === 100) {
-            speedText.textContent = "Complete";
+            speedText.textContent = "Finished";
             const cancelBtn = document.getElementById(`cancel-btn-${transferId}`);
             if (cancelBtn) cancelBtn.classList.add("hidden");
           } else {
@@ -1938,12 +1953,8 @@
       const outgoing = state.outgoingTransfers.get(transferId);
       const incoming = state.incomingTransfers.get(transferId);
       
-      if (outgoing) {
-        outgoing.status = "CANCELLED";
-      }
-      if (incoming) {
-        incoming.status = "CANCELLED";
-      }
+      if (outgoing) outgoing.status = "CANCELLED";
+      if (incoming) incoming.status = "CANCELLED";
 
       const card = document.getElementById(`card-${transferId}`);
       if (card) {
@@ -1965,7 +1976,7 @@
     function handleTransferError(transferId, errorMsg, isOutgoing) {
       const card = document.getElementById(`card-${transferId}`);
       if (card) {
-        card.classList.add("border-[#FF4D4D]");
+        card.classList.add("border-[var(--red)]");
         const speedEl = document.getElementById(`speed-${transferId}`);
         if (speedEl) speedEl.textContent = `Error: ${errorMsg}`;
         const cancelBtn = document.getElementById(`cancel-btn-${transferId}`);
@@ -1989,13 +2000,40 @@
       state.incomingTransfers.clear();
     }
 
+    // --- SIMPLE SESSION HISTORY ---
+    function addHistoryRecord(type, description, isMe) {
+      const histContainer = document.getElementById("history-container");
+      // Remove placeholder empty text
+      if (histContainer.querySelector("p.italic")) {
+        histContainer.innerHTML = "";
+      }
+
+      const item = document.createElement("div");
+      item.className = "flex justify-between items-center p-2 bg-[var(--surface)] brutal-border border-2";
+      
+      const meta = document.createElement("span");
+      meta.className = "truncate mr-2";
+      meta.innerHTML = `<strong class="uppercase text-[9px] px-1 bg-[var(--muted-paper)] mr-1">${type}</strong> ${escapeHtml(description)}`;
+
+      const timeVal = document.createElement("span");
+      timeVal.className = "text-[9px] opacity-75 shrink-0";
+      timeVal.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      item.appendChild(meta);
+      item.appendChild(timeVal);
+      histContainer.prepend(item);
+    }
+
     // --- LOOPBACK SIMULATOR "SEND TO SELF" DEBUG SUITE ---
-    function toggleDebugMode() {
+    function toggleDebugMode(explicitFlag = null) {
       const modal = document.getElementById("debug-modal");
-      if (modal.classList.contains("hidden")) {
+      const targetState = explicitFlag !== null ? explicitFlag : modal.classList.contains("hidden");
+      
+      if (targetState) {
         modal.classList.remove("hidden");
         state.debugActive = true;
-        writeToDebugLog("Virtual Sandbox Transport Loop initialized.", "info");
+        writeToDebugLog("Virtual Sandbox Transport Loop active.", "info");
+        document.getElementById("close-debug-btn").focus();
       } else {
         modal.classList.add("hidden");
         state.debugActive = false;
@@ -2005,7 +2043,6 @@
     function writeToDebugLog(msg, type = "log") {
       const term = document.getElementById("debug-terminal-logs");
       const wrap = document.createElement("div");
-      
       const timeStr = new Date().toLocaleTimeString([], { hour12: false });
       
       if (type === "info") {
@@ -2022,7 +2059,7 @@
     }
 
     function clearDebugConsole() {
-      document.getElementById("debug-terminal-logs").innerHTML = `<div class="text-gray-500">[System] Simulator cleared. Ready.</div>`;
+      document.getElementById("debug-terminal-logs").innerHTML = `<div class="text-gray-500">[System] Simulator cleared.</div>`;
     }
 
     function sendDebugPayload(senderNode, type) {
@@ -2031,11 +2068,8 @@
 
       if (!txtVal) return;
 
-      writeToDebugLog(`Node ${senderNode} sends message: "${txtVal.substring(0, 30)}${txtVal.length > 30 ? '...' : ''}"`);
-      
-      // Simulate rendering standard text components inside app feed instantly
+      writeToDebugLog(`Node ${senderNode} sends snippet: "${txtVal.substring(0, 20)}..."`);
       appendChatBubble(senderNode === "A" ? "Copper Fox" : "Neon Owl", txtVal, senderNode === "A");
-
       document.getElementById(`debug-text-${senderNode.toLowerCase()}`).value = "";
     }
 
@@ -2044,7 +2078,7 @@
       if (!file) return;
 
       const partnerNode = node === "A" ? "B" : "A";
-      writeToDebugLog(`Node ${node} initialized file stream: ${file.name} (${formatBytes(file.size)})`, "info");
+      writeToDebugLog(`Node ${node} initialized file: ${file.name} (${formatBytes(file.size)})`, "info");
 
       const transferId = `db-${Math.random().toString(36).substr(2, 9)}`;
       const fileMeta = {
@@ -2055,28 +2089,18 @@
         totalChunks: Math.ceil(file.size / CHUNK_SIZE)
       };
 
-      // Draw standard progress card representations
       renderTransferCard(transferId, node === "A" ? "SENDING" : "RECEIVING", fileMeta);
 
-      const senderState = {
-        file: file,
-        meta: fileMeta,
-        sentBytes: 0,
-        startTime: Date.now()
-      };
-      
       const receiverChunks = [];
       let offset = 0;
       let chunkIdx = 0;
 
-      // Simulated network stream processing loop
       const simulateStream = async () => {
         while (offset < file.size) {
           const slice = file.slice(offset, offset + CHUNK_SIZE);
           const buf = await slice.arrayBuffer();
 
-          // Simulating light 15ms synthetic latency transit
-          await new Promise(r => setTimeout(r, 15));
+          await new Promise(r => setTimeout(r, 12));
 
           receiverChunks[chunkIdx] = buf;
           offset += CHUNK_SIZE;
@@ -2086,9 +2110,6 @@
           updateTransferProgress(transferId, "SENDING", currentBytes, file.size);
         }
 
-        writeToDebugLog(`Node ${partnerNode} received completed binary arrays. Compiling blob...`, "info");
-
-        // Emulate completed blob output trigger
         const fileBlob = new Blob(receiverChunks, { type: fileMeta.type });
         const objectUrl = URL.createObjectURL(fileBlob);
         
@@ -2100,32 +2121,11 @@
         }
 
         updateTransferProgress(transferId, "COMPLETE", file.size, file.size);
-        writeToDebugLog(`Stream finished successfully. Download available in primary panel.`, "success");
+        writeToDebugLog("P2P stream finish. Local node virtual file available for download.", "info");
       };
 
       simulateStream();
     }
   </script>
-
-  <!-- Dynamic PWA Manifest and SW Instructions comment block for high-end offline setups:
-  /*
-  To enable full offline operational service worker capabilities, host a tiny 'sw.js' parallel to this index file with standard routing caches:
-  
-  self.addEventListener('install', e => {
-    e.waitUntil(
-      caches.open('ez-drop-pwa').then(cache => {
-        return cache.addAll(['./', './index.html']);
-      })
-    );
-  });
-  self.addEventListener('fetch', e => {
-    e.respondWith(
-      caches.match(e.request).then(response => {
-        return response || fetch(e.request);
-      })
-    );
-  });
-  */
-  -->
 </body>
 </html>
