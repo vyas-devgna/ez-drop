@@ -13,6 +13,10 @@
   <meta name="apple-mobile-web-app-title" content="ez-drop">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
+  <!-- Favicon & Touch Icon Links -->
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  <link rel="apple-touch-icon" href="assets/logo.png">
+
   <!-- CDN Dependencies -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Playfair+Display:ital,wght@0,700;1,400&family=JetBrains+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -193,9 +197,12 @@
   <header class="w-full max-w-6xl mx-auto px-4 pt-6 pb-2">
     <div class="flex justify-between items-center bg-[var(--surface)] brutal-border p-4 brutal-shadow">
       <div class="flex items-center gap-3">
-        <!-- Logo Stamp -->
-        <div class="bg-[var(--yellow)] brutal-border p-2 px-4 rotate-[-1deg] inline-block brutal-shadow-sm select-none">
-          <h1 class="serif-display text-xl md:text-2xl font-extrabold tracking-tight">ez-drop</h1>
+        <!-- Logo Stamp (Brutalist card embedding the PNG / falling back to typography on error) -->
+        <div class="bg-[var(--yellow)] brutal-border p-1.5 px-3 rotate-[-1deg] inline-block brutal-shadow-sm select-none">
+          <div class="flex items-center gap-2">
+            <img src="assets/logo.png" alt="" class="h-6 w-6 object-contain" onerror="this.style.display='none'">
+            <h1 class="serif-display text-xl md:text-2xl font-extrabold tracking-tight">ez-drop</h1>
+          </div>
         </div>
 
         <!-- Sleek Minimal status indicator next to the logo -->
@@ -317,7 +324,6 @@
             <div class="text-[10px] font-mono-custom text-[var(--muted)] uppercase tracking-wider font-bold">Active Connection Stream</div>
             <div class="flex items-center gap-2 flex-wrap">
               <span id="peer-name-display" class="font-bold serif-display text-lg">Recipient Name</span>
-              <span id="latency-strip" class="font-mono-custom text-[10px] bg-[var(--ink)] text-[var(--paper)] px-1.5 py-0.5 rounded-sm">0ms</span>
             </div>
           </div>
         </div>
@@ -747,6 +753,9 @@
 
     // Dynamic Manifest Injection (Fixed start_url and scope warning)
     const absoluteStartUrl = window.location.origin + window.location.pathname;
+    const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname + '/';
+    const logoUrl = window.location.origin + basePath + 'assets/logo.png';
+
     const manifest = {
       name: "ez-drop P2P Sharing Tool",
       short_name: "ez-drop",
@@ -757,14 +766,14 @@
       theme_color: "#F9F8F6",
       icons: [
         {
-          src: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23FFD93D'/><text x='50%' y='60%' font-size='40' font-weight='bold' font-family='sans-serif' text-anchor='middle' fill='%23111111'>ez</text></svg>",
+          src: logoUrl,
           sizes: "192x192",
-          type: "image/svg+xml"
+          type: "image/png"
         },
         {
-          src: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23FFD93D'/><text x='50%' y='60%' font-size='40' font-weight='bold' font-family='sans-serif' text-anchor='middle' fill='%23111111'>ez</text></svg>",
+          src: logoUrl,
           sizes: "512x512",
-          type: "image/svg+xml"
+          type: "image/png"
         }
       ]
     };
@@ -1441,34 +1450,6 @@
       }
     }
 
-    function respondToInvitation(accepted) {
-      document.getElementById("invite-modal").classList.add("hidden");
-      if (!pendingInviteConnection) return;
-
-      if (accepted) {
-        state.conn = pendingInviteConnection;
-        state.connectedPeer = { id: pendingInviteConnection.peer, name: document.getElementById("invite-peer-name").textContent };
-        
-        state.conn.send({
-          type: "accept",
-          from: state.identity.name,
-          payload: {}
-        });
-
-        renderAppByState("CONNECTED");
-        document.getElementById("peer-name-display").textContent = escapeHtml(state.connectedPeer.name);
-        playSound("connect");
-        initiatePingLoop();
-      } else {
-        pendingInviteConnection.send({ type: "decline", from: state.identity.name });
-        setTimeout(() => {
-          pendingInviteConnection.close();
-          pendingInviteConnection = null;
-          renderAppByState("READY");
-        }, 200);
-      }
-    }
-
     // Terminate Session cleanup routines
     function terminateSession() {
       if (state.conn) {
@@ -1498,10 +1479,7 @@
     }
 
     function updatePingIndicator(latency) {
-      const badge = document.getElementById("latency-strip");
-      if (badge) {
-        badge.textContent = `${latency}ms`;
-      }
+      // Latency calculation remains alive, but visual stats elements are completely hidden from user view
     }
 
     function updateRoomTicket(roomCode) {
