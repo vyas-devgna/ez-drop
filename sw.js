@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ez-drop-cache-v1.2';
+const CACHE_NAME = 'ez-drop-cache-v1.3'; // Bumped cache to force-evict poisoned states
 const PRECACHE_ASSETS = [
   './',
   './index.html'
@@ -50,44 +50,46 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Ignore non-GET requests immediately
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
 
-  // Cache-First with Network Fallback Strategy for local static shell, serving offline instantly
+  // CRITICAL FIX: Explicitly bypass Service Worker for PeerJS signaling server traffic!
+  // This prevents cache poisoning of dynamically allocated room/peer IDs.
+  if (url.hostname.includes('peerjs') || url.pathname.includes('/peerjs')) {
+    return; // Pass directly to the network without SW intervention
+  }
+
+  // Network-First Strategy for local origin (index.html, etc.)
+  // Ensures that online users always get the absolute freshest build, fallback to cache offline.
   if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(event.request).then(cachedResponse => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(event.request).then(networkResponse => {
-          if (networkResponse && networkResponse.status === 200) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-          }
-          return networkResponse;
-        }).catch(() => {
-          // Absolute offline fallback
-          if (event.request.mode === 'navigate') {
-            return caches.match('./index.html');
-          }
-        });
-      })
-    );
-  } else {
-    // Network-First with Cache Fallback for CDN third party elements to avoid stale states
     event.respondWith(
       fetch(event.request)
         .then(response => {
-          if (response && (response.status === 200 || response.type === 'opaque')) {
+          if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
           }
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html')))
+    );
+  } else {
+    // Cache-First Strategy with Network Fallback for static CDN libraries
+    event.respondWith(
+      caches.match(event.request)
+        .then(cachedResponse => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          return fetch(event.request).then(response => {
+            if (response && (response.status === 200 || response.type === 'opaque')) {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+            }
+            return response;
+          });
+        })
     );
   }
 });
