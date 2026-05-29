@@ -8,6 +8,7 @@
   <!-- SEO & PWA Meta -->
   <meta name="description" content="A zero-cost, serverless, peer-to-peer secure file and text transfer utility using WebRTC DataChannels. No storage, no limits.">
   <meta name="theme-color" content="#F9F8F6">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ez-drop">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -465,7 +466,7 @@
           <h3 class="font-mono-custom text-xs uppercase text-[var(--muted)] font-bold tracking-wider">Device Customization</h3>
           <div class="flex flex-col gap-2">
             <label for="menu-device-name" class="text-xs font-mono-custom">Edit Identity Name</label>
-            <input type="text" id="menu-device-name" class="bg-[var(--paper)] brutal-border p-2 font-mono-custom text-xs focus:outline-none focus:bg-[var(--surface)]" onchange="updateDeviceName(this.value)">
+            <input type="text" id="menu-device-name" class="bg-[var(--paper)] brutal-border p-2 font-mono-custom text-xs focus:outline-none focus:bg-[var(--surface)]">
           </div>
           
           <div class="flex items-center justify-between border-t border-[var(--muted-paper)] pt-3 mt-1">
@@ -744,11 +745,13 @@
       });
     }
 
-    // Dynamic Manifest Injection
+    // Dynamic Manifest Injection (Fixed start_url and scope warning)
+    const absoluteStartUrl = window.location.origin + window.location.pathname;
     const manifest = {
       name: "ez-drop P2P Sharing Tool",
       short_name: "ez-drop",
-      start_url: "./",
+      start_url: absoluteStartUrl,
+      scope: absoluteStartUrl,
       display: "standalone",
       background_color: "#F9F8F6",
       theme_color: "#F9F8F6",
@@ -869,6 +872,14 @@
 
       // 7. Accessibility setup: keyboard trap/escape listeners
       setupAccessibilityEscListeners();
+
+      // 8. Bind menu device name change handler
+      const menuDeviceNameInput = document.getElementById("menu-device-name");
+      if (menuDeviceNameInput) {
+        menuDeviceNameInput.addEventListener("change", (e) => {
+          updateDeviceName(e.target.value);
+        });
+      }
     });
 
     function generateRandomRoomCode() {
@@ -884,8 +895,15 @@
       }
       state.identity.name = savedName;
       
-      document.getElementById("device-name-input").value = savedName;
-      document.getElementById("menu-device-name").value = savedName;
+      const mainInput = document.getElementById("device-name-input");
+      if (mainInput) {
+        mainInput.value = savedName;
+      }
+      
+      const menuInput = document.getElementById("menu-device-name");
+      if (menuInput) {
+        menuInput.value = savedName;
+      }
     }
 
     function updateDeviceName(newName) {
@@ -894,8 +912,15 @@
       state.identity.name = sanitized;
       localStorage.setItem("ezdrop_name", sanitized);
       
-      document.getElementById("device-name-input").value = sanitized;
-      document.getElementById("menu-device-name").value = sanitized;
+      const mainInput = document.getElementById("device-name-input");
+      if (mainInput) {
+        mainInput.value = sanitized;
+      }
+      
+      const menuInput = document.getElementById("menu-device-name");
+      if (menuInput) {
+        menuInput.value = sanitized;
+      }
 
       if (state.conn && state.connectionState === "CONNECTED") {
         state.conn.send({
@@ -935,6 +960,7 @@
       }
     }
 
+    // Helper functions for alerts and platform parameters
     function hideGlobalAlert() {
       document.getElementById("global-alert").classList.add("hidden");
     }
