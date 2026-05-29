@@ -197,15 +197,15 @@
         <div class="bg-[var(--yellow)] brutal-border p-2 px-4 rotate-[-1deg] inline-block brutal-shadow-sm select-none">
           <h1 class="serif-display text-xl md:text-2xl font-extrabold tracking-tight">ez-drop</h1>
         </div>
-      </div>
 
-      <!-- Compact Connectivity Pill -->
-      <div class="flex items-center gap-2.5 bg-[var(--muted-paper)] p-2 px-3 brutal-border font-mono-custom text-xs">
-        <span class="relative flex h-2.5 w-2.5">
-          <span id="status-dot-pulse" class="pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--gold)] opacity-75"></span>
-          <span id="status-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--gold)]"></span>
-        </span>
-        <span id="header-status-lbl" class="uppercase font-bold tracking-wider">Starting up</span>
+        <!-- Sleek Minimal status indicator next to the logo -->
+        <div class="flex items-center gap-2">
+          <span class="relative flex h-3.5 w-3.5" title="Connection status" id="status-dot-container">
+            <span id="status-dot-pulse" class="pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--gold)] opacity-75"></span>
+            <span id="status-dot" class="relative inline-flex rounded-full h-3.5 w-3.5 bg-[var(--gold)]"></span>
+          </span>
+          <span id="header-status-lbl" class="text-xs font-mono-custom uppercase font-bold tracking-wider opacity-85 hidden sm:inline">Starting up</span>
+        </div>
       </div>
 
       <!-- Burger Drawer Trigger -->
@@ -571,7 +571,7 @@
 
   <!-- INCOMING CONNECTION INVITATION MODAL -->
   <div id="invite-modal" class="fixed inset-0 bg-black/70 z-50 backdrop-blur-xs hidden flex items-center justify-center p-4">
-    <div class="bg-[var(--surface-warm)] w-full max-w-sm brutal-border brutal-shadow-lg p-6 relative" id="invite-focus-holder">
+    <div class="bg-[var(--surface-warm)] w-full max-sm brutal-border brutal-shadow-lg p-6 relative" id="invite-focus-holder">
       <div class="absolute -top-3 left-8 w-24 h-6 bg-[rgba(255,77,77,0.4)] border border-dashed border-[var(--ink)] rotate-[2deg]"></div>
       
       <div class="text-center flex flex-col gap-4 mt-2">
@@ -811,7 +811,7 @@
           gainNode.connect(audioCtx.destination);
           osc.type = "triangle";
           osc.frequency.setValueAtTime(523.25, now); // C5
-          osc.frequency.setValueAtTime(659.25, now + 0.1; // E5
+          osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
           osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
           gainNode.gain.setValueAtTime(0.15, now);
           gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
@@ -1143,7 +1143,7 @@
       const ariaStatus = document.getElementById("aria-status");
 
       // Set class defaults
-      dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--gold)]";
+      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--gold)]";
       dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--gold)] opacity-75";
 
       switch (targetState) {
@@ -1151,7 +1151,7 @@
         case "READY":
           panels.ready.classList.remove("hidden");
           headerStatus.textContent = "Signaling Ready";
-          dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[#1F8A4C]";
+          dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#1F8A4C]";
           dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
           ariaStatus.textContent = "Signaling ready to connect.";
           document.getElementById("ready-status-desc").textContent = "Waiting for entry";
@@ -1160,7 +1160,7 @@
         case "CONNECTING":
           panels.connecting.classList.remove("hidden");
           headerStatus.textContent = "Connecting";
-          dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--yellow)]";
+          dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--yellow)]";
           dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--yellow)] opacity-75";
           document.getElementById("connecting-state-desc").textContent = diagnosticMsg || "Connecting to target namespace...";
           ariaStatus.textContent = "Establishing client WebRTC session.";
@@ -1169,7 +1169,7 @@
         case "CONNECTED":
           panels.connected.classList.remove("hidden");
           headerStatus.textContent = "CONNECTED";
-          dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[#1F8A4C]";
+          dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#1F8A4C]";
           dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
           ariaStatus.textContent = `Direct connection streaming active with peer.`;
           break;
@@ -1177,7 +1177,7 @@
         case "ERROR":
           panels.error.classList.remove("hidden");
           headerStatus.textContent = "OFFLINE/ERROR";
-          dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--red)]";
+          dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--red)]";
           dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--red)] opacity-75";
           document.getElementById("error-state-desc").textContent = diagnosticMsg || "WebRTC port connection failed.";
           ariaStatus.textContent = "Connection dropped. Try again.";
