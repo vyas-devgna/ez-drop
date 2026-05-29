@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ez-drop</title>
+  <title>ez-drop — Instant Peer-to-Peer File Transfer</title>
   
   <!-- SEO & PWA Meta -->
   <meta name="description" content="A zero-cost, serverless, peer-to-peer secure file and text transfer utility using WebRTC DataChannels. No storage, no limits.">
@@ -577,7 +577,7 @@
 
   <!-- INCOMING CONNECTION INVITATION MODAL -->
   <div id="invite-modal" class="fixed inset-0 bg-black/70 z-50 backdrop-blur-xs hidden flex items-center justify-center p-4">
-    <div class="bg-[var(--surface-warm)] w-full max-sm brutal-border brutal-shadow-lg p-6 relative" id="invite-focus-holder">
+    <div class="bg-[var(--surface-warm)] w-full max-w-sm brutal-border brutal-shadow-lg p-6 relative" id="invite-focus-holder">
       <div class="absolute -top-3 left-8 w-24 h-6 bg-[rgba(255,77,77,0.4)] border border-dashed border-[var(--ink)] rotate-[2deg]"></div>
       
       <div class="text-center flex flex-col gap-4 mt-2">
@@ -1307,7 +1307,7 @@
     let pendingInviteConnection = null;
 
     function setupConnectionCallbacks(connInstance, isHost) {
-      connInstance.on("open", () => {
+      const handleOpen = () => {
         state.conn = connInstance;
 
         // Challenge-Proof Password Handshake Negotiation
@@ -1333,7 +1333,14 @@
             payload: { version: APP_VERSION }
           });
         }
-      });
+      };
+
+      // Fix PeerJS Race Condition where connInstance is already open when event handler binds
+      if (connInstance.open) {
+        handleOpen();
+      } else {
+        connInstance.on("open", handleOpen);
+      }
 
       connInstance.on("data", (data) => {
         processIncomingMessage(data, connInstance);
@@ -1447,6 +1454,54 @@
           showGlobalAlert(`Transmission Error: ${msg.payload.error}`, "error");
           playSound("error");
           break;
+      }
+    }
+
+    // Defensive error-guarded implementation to prevent UI freezes on clicking modals
+    function respondToInvitation(accepted) {
+      document.getElementById("invite-modal").classList.add("hidden");
+      if (!pendingInviteConnection) {
+        showGlobalAlert("No pending invitation found or connection already timed out.", "error");
+        return;
+      }
+
+      try {
+        if (accepted) {
+          state.conn = pendingInviteConnection;
+          state.connectedPeer = { 
+            id: pendingInviteConnection.peer, 
+            name: document.getElementById("invite-peer-name").textContent 
+          };
+
+          state.conn.send({
+            type: "accept",
+            from: state.identity.name,
+            payload: {}
+          });
+
+          renderAppByState("CONNECTED");
+          document.getElementById("peer-name-display").textContent = escapeHtml(state.connectedPeer.name);
+          playSound("connect");
+          initiatePingLoop();
+        } else {
+          state.conn = null;
+          state.connectedPeer = null;
+          pendingInviteConnection.send({ type: "decline", from: state.identity.name });
+          const connToClose = pendingInviteConnection;
+          setTimeout(() => {
+            try {
+              connToClose.close();
+            } catch (e) {
+              console.warn("Error closing rejected connection:", e);
+            }
+          }, 200);
+          pendingInviteConnection = null;
+          renderAppByState("READY");
+        }
+      } catch (err) {
+        console.error("Error inside respondToInvitation flow:", err);
+        showGlobalAlert("Failed to respond to connection request: " + err.message, "error");
+        terminateSession();
       }
     }
 
