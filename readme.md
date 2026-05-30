@@ -1,4 +1,3 @@
-````md
 <p align="center">
   <img src="assets/logo.png" alt="ez-drop logo" width="112" />
 </p>
@@ -230,5 +229,4 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md), [CODE
 
 MIT. See [LICENSE](LICENSE).
 
-```
 ```
