@@ -1,12 +1,15 @@
-const CACHE_NAME = 'ez-drop-cache-v1.3'; // Bumped cache to force-evict poisoned states
+const CACHE_NAME = 'ez-drop-cache-v1.5'; // Bumped cache to force-evict stale app-shell assets
+const DEBUG_LOGS = false;
 const PRECACHE_ASSETS = [
   './',
-  './index.html'
+  './index.html',
+  './styles.css',
+  './app.js',
+  './assets/logo.png'
 ];
 
 // Offline fallback for critical CDN dependencies
 const CDN_ASSETS = [
-  'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Playfair+Display:ital,wght@0,700;1,400&family=JetBrains+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap',
   'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
@@ -18,16 +21,17 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('[sw.js] Precaching essential local assets...');
-        cache.addAll(PRECACHE_ASSETS).catch(err => {
-          console.warn('[sw.js] Precache failed, continuing dynamically:', err);
-        });
-        
-        // Cache external library dependencies
-        CDN_ASSETS.forEach(url => {
-          fetch(new Request(url, { mode: 'no-cors' }))
-            .then(res => cache.put(url, res))
-            .catch(err => console.warn(`[sw.js] Failed precaching CDN library: ${url}`, err));
+        if (DEBUG_LOGS) console.log('[sw.js] Precaching essential local assets...');
+        return Promise.allSettled([
+          cache.addAll(PRECACHE_ASSETS),
+          ...CDN_ASSETS.map(url => (
+            fetch(new Request(url, { mode: 'no-cors' }))
+              .then(res => cache.put(url, res))
+          ))
+        ]).then(results => {
+          results
+            .filter(result => result.status === 'rejected')
+            .forEach(result => console.warn('[sw.js] Precache item skipped:', result.reason));
         });
       })
       .then(() => self.skipWaiting())
@@ -40,7 +44,7 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cache => {
           if (cache !== CACHE_NAME) {
-            console.log('[sw.js] Evicting outdated service caches:', cache);
+            if (DEBUG_LOGS) console.log('[sw.js] Evicting outdated service caches:', cache);
             return caches.delete(cache);
           }
         })
@@ -53,6 +57,7 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
+  if (!['http:', 'https:'].includes(url.protocol)) return;
 
   // CRITICAL FIX: Explicitly bypass Service Worker for PeerJS signaling server traffic!
   // This prevents cache poisoning of dynamically allocated room/peer IDs.
@@ -72,7 +77,11 @@ self.addEventListener('fetch', event => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html')))
+        .catch(() => caches.match(event.request).then(cached => {
+          if (cached) return cached;
+          if (event.request.mode === 'navigate') return caches.match('./index.html');
+          return new Response('', { status: 504, statusText: 'Offline asset unavailable' });
+        }))
     );
   } else {
     // Cache-First Strategy with Network Fallback for static CDN libraries

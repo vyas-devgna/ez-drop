@@ -1,0 +1,1891 @@
+// --- APP CONSTANTS & ALGORITHMS ---
+const APP_VERSION = "1.2.0";
+const DEBUG_LOGS = false;
+const CHUNK_SIZE = 64 * 1024; // Robust 64KB Packets
+const LAN_CHUNK_SIZE = 256 * 1024;
+const MAX_BUFFERED_AMOUNT = 1024 * 1024;
+const LOW_BUFFERED_AMOUNT = 256 * 1024;
+const LAN_MAX_BUFFERED_AMOUNT = 16 * 1024 * 1024;
+const LAN_LOW_BUFFERED_AMOUNT = 4 * 1024 * 1024;
+const PEER_PREFIX = "ezdrop-";
+const ROOM_PREFIX = "ezdrop-room-";
+
+const ANIMAL_NAMES = [
+  "Blue Fox", "Paper Tiger", "Neon Panda", "Quiet Falcon", "Golden Otter",
+  "Copper Owl", "Silver Lynx", "Velvet Sloth", "Iron Badger", "Bronze Beaver",
+  "Cobalt Koala", "Onyx Panther", "Amber Squirrel", "Vivid Peacock", "Prism Rabbit"
+];
+
+// --- APPLICATION CENTRALIZED STATE ---
+const state = {
+  identity: { name: "", id: "" },
+  roomCode: "",
+  shareUrl: "",
+  peer: null,               // PeerJS Instance
+  conn: null,               // Current active PeerJS DataConnection
+  connectedPeer: null,      // Name / Metadata details of active Peer
+  connectionState: "DISCONNECTED", // DISCONNECTED, CREATING, WAITING, CONNECTING, INVITING, PASSWORD_CHECK, CONNECTED, ERROR
+  passwordEnabled: false,
+  passphrase: "",
+  soundEnabled: false,
+  installPrompt: null,      // PWA deferred prompt
+  outgoingTransfers: new Map(), // transferId -> State Obj
+  incomingTransfers: new Map(), // transferId -> State Obj
+  textHistory: [],
+  fileHistory: [],
+  latency: 0,
+  pingIntervalId: null,
+  networkPath: { mode: "unknown", detail: "Route: detecting", monitorId: null, remoteMode: "unknown" },
+  wakeLock: null,
+  scannerInstance: null,
+  debugActive: false,
+  debugNodes: {
+    A: { name: "Copper Fox", incoming: new Map(), outgoing: new Map() },
+    B: { name: "Neon Owl", incoming: new Map(), outgoing: new Map() }
+  }
+};
+
+function getAppBasePath() {
+  const pathname = window.location.pathname;
+  return pathname.endsWith('/') ? pathname : pathname.slice(0, pathname.lastIndexOf('/') + 1);
+}
+
+function debugLog(...args) {
+  if (DEBUG_LOGS) console.log(...args);
+}
+
+// --- SERVICE WORKER & DYNAMIC MANIFEST REGISTRATION ---
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    // Build base path dynamically to avoid breaking under custom GitHub Pages subfolders
+    const basePath = getAppBasePath();
+    const swUrl = basePath + 'sw.js';
+    
+    navigator.serviceWorker.register(swUrl, { scope: basePath })
+      .then(reg => {
+        debugLog('ez-drop Service Worker successfully registered with scope:', reg.scope);
+        const statusTag = document.getElementById("pwa-status-tag");
+        if (statusTag) {
+          statusTag.textContent = "Offline Ready";
+          statusTag.className = "bg-[#1F8A4C] text-white px-2 py-0.5 rounded-sm uppercase text-[9px] font-bold";
+        }
+      })
+      .catch(err => {
+        console.warn('Service Worker registration skipped or failed:', err);
+      });
+  });
+}
+
+// Dynamic Manifest Injection (Fixed start_url and scope warning)
+const absoluteStartUrl = window.location.origin + window.location.pathname;
+const basePath = getAppBasePath();
+const appScopeUrl = window.location.origin + basePath;
+const logoUrl = window.location.origin + basePath + 'assets/logo.png';
+
+const manifest = {
+  name: "ez-drop P2P Sharing Tool",
+  short_name: "ez-drop",
+  start_url: absoluteStartUrl,
+  scope: appScopeUrl,
+  display: "standalone",
+  background_color: "#F9F8F6",
+  theme_color: "#F9F8F6",
+  icons: [
+    {
+      src: logoUrl,
+      sizes: "192x192",
+      type: "image/png"
+    },
+    {
+      src: logoUrl,
+      sizes: "512x512",
+      type: "image/png"
+    }
+  ]
+};
+const blobManifest = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+const manifestLink = document.createElement('link');
+manifestLink.rel = 'manifest';
+manifestLink.href = URL.createObjectURL(blobManifest);
+document.head.appendChild(manifestLink);
+
+// --- WEB AUDIO SYNTHESIZER SOUND ENGINE ---
+let audioCtx = null;
+
+function initAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+function playSound(type) {
+  if (!state.soundEnabled) return;
+  try {
+    initAudioContext();
+    const now = audioCtx.currentTime;
+
+    if (type === "connect") {
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(523.25, now); // C5
+      osc.frequency.setValueAtTime(659.25, now + 0.12); // E5
+      gainNode.gain.setValueAtTime(0.15, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+      osc.start(now);
+      osc.stop(now + 0.4);
+    } else if (type === "complete") {
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(523.25, now); // C5
+      osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+      osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+      gainNode.gain.setValueAtTime(0.15, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+      osc.start(now);
+      osc.stop(now + 0.5);
+    } else if (type === "error") {
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(220.00, now); // A3
+      osc.frequency.linearRampToValueAtTime(110.00, now + 0.25);
+      gainNode.gain.setValueAtTime(0.1, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    }
+  } catch (err) {
+    console.error("Audio synthesizer exception captured:", err);
+  }
+}
+
+// --- LIFE CYCLE & IDENTITY MANAGEMENT ---
+window.addEventListener("DOMContentLoaded", () => {
+  // 1. Initialize user device name details
+  restoreDeviceIdentity();
+
+  // 2. Render Lucide Icons
+  lucide.createIcons();
+
+  // 3. Listen to PWA hooks
+  setupPwaHooks();
+
+  // 4. Parse search params in URL automatically
+  const params = new URLSearchParams(window.location.search);
+  const incomingRoom = params.get("r");
+
+  if (incomingRoom && incomingRoom.match(/^\d{5}$/)) {
+    // Target incoming auto room setup
+    state.roomCode = generateRandomRoomCode();
+    initPeerSession(incomingRoom);
+  } else {
+    // Normal host init
+    state.roomCode = generateRandomRoomCode();
+    initPeerSession();
+  }
+
+  // 5. Bind Drag and Drop listeners
+  setupDragAndDrop();
+
+  // 6. Test for native share
+  if (navigator.share) {
+    const shareBtn = document.getElementById("native-share-btn");
+    shareBtn.removeAttribute("disabled");
+    shareBtn.classList.remove("opacity-50", "cursor-not-allowed");
+  }
+
+  // 7. Accessibility setup: keyboard trap/escape listeners
+  setupAccessibilityEscListeners();
+  setupMobileLifecycleHooks();
+
+  // 8. Bind menu device name change handler
+  const menuDeviceNameInput = document.getElementById("menu-device-name");
+  if (menuDeviceNameInput) {
+    menuDeviceNameInput.addEventListener("change", (e) => {
+      updateDeviceName(e.target.value);
+    });
+  }
+});
+
+function generateRandomRoomCode() {
+  return Math.floor(10000 + Math.random() * 90000).toString();
+}
+
+function restoreDeviceIdentity() {
+  let savedName = safeStorageGet("ezdrop_name");
+  if (!savedName || savedName.trim() === "") {
+    const idx = Math.floor(Math.random() * ANIMAL_NAMES.length);
+    savedName = ANIMAL_NAMES[idx];
+    safeStorageSet("ezdrop_name", savedName);
+  }
+  state.identity.name = savedName;
+  
+  const mainInput = document.getElementById("device-name-input");
+  if (mainInput) {
+    mainInput.value = savedName;
+  }
+  
+  const menuInput = document.getElementById("menu-device-name");
+  if (menuInput) {
+    menuInput.value = savedName;
+  }
+}
+
+function updateDeviceName(newName) {
+  if (!newName || newName.trim() === "") return;
+  const sanitized = escapeHtml(newName.trim());
+  state.identity.name = sanitized;
+  safeStorageSet("ezdrop_name", sanitized);
+  
+  const mainInput = document.getElementById("device-name-input");
+  if (mainInput) {
+    mainInput.value = sanitized;
+  }
+  
+  const menuInput = document.getElementById("menu-device-name");
+  if (menuInput) {
+    menuInput.value = sanitized;
+  }
+
+  if (state.conn && state.connectionState === "CONNECTED") {
+    state.conn.send({
+      type: "peer-status",
+      payload: { name: sanitized }
+    });
+  }
+}
+
+function regenerateIdentityName() {
+  const idx = Math.floor(Math.random() * ANIMAL_NAMES.length);
+  updateDeviceName(ANIMAL_NAMES[idx]);
+}
+
+// --- UTILITIES ---
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, function (m) {
+    switch (m) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&#039;';
+    }
+  });
+}
+
+function safeStorageGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (err) {
+    console.warn("Local storage unavailable:", err);
+    return null;
+  }
+}
+
+function safeStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    console.warn("Local storage write skipped:", err);
+  }
+}
+
+function nextFrame() {
+  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches;
+}
+
+function getPreferredChunkSize() {
+  return state.networkPath.mode === "lan" ? LAN_CHUNK_SIZE : CHUNK_SIZE;
+}
+
+function getMaxBufferedAmount() {
+  return state.networkPath.mode === "lan" ? LAN_MAX_BUFFERED_AMOUNT : MAX_BUFFERED_AMOUNT;
+}
+
+function getLowBufferedAmount() {
+  return state.networkPath.mode === "lan" ? LAN_LOW_BUFFERED_AMOUNT : LOW_BUFFERED_AMOUNT;
+}
+
+function showGlobalAlert(msg, type = "error") {
+  const bar = document.getElementById("global-alert");
+  const txt = document.getElementById("global-alert-text");
+  txt.textContent = msg;
+  bar.classList.remove("hidden");
+  if (type === "error") {
+    bar.className = "brutal-border bg-[var(--correction)] text-black p-3 text-center font-mono-custom text-xs relative z-50 font-bold";
+  } else {
+    bar.className = "brutal-border bg-[var(--ok)] text-white p-3 text-center font-mono-custom text-xs relative z-50 font-bold";
+  }
+}
+
+// Helper functions for alerts and platform parameters
+function hideGlobalAlert() {
+  document.getElementById("global-alert").classList.add("hidden");
+}
+
+function copyShareLink() {
+  const textToCopy = state.shareUrl;
+  const copyBtn = document.getElementById("copy-btn-text");
+
+  const markCopied = () => {
+    copyBtn.textContent = "Copied!";
+    setTimeout(() => {
+      copyBtn.textContent = "Copy Link";
+    }, 1500);
+  };
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(textToCopy).then(markCopied).catch(() => fallbackCopyText(textToCopy, markCopied));
+    return;
+  }
+
+  fallbackCopyText(textToCopy, markCopied);
+}
+
+function fallbackCopyText(textToCopy, onSuccess) {
+  const el = document.createElement('textarea');
+  el.value = textToCopy;
+  el.setAttribute('readonly', '');
+  el.style.position = 'fixed';
+  el.style.left = '-9999px';
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+  onSuccess();
+}
+
+function triggerNativeShare() {
+  if (navigator.share) {
+    navigator.share({
+      title: 'ez-drop P2P Transfer',
+      text: `Connect directly to my ez-drop workspace to exchange data.`,
+      url: state.shareUrl
+        }).catch(err => {
+          debugLog("Native share cancelled.", err);
+        });
+  }
+}
+
+// --- PWA INSTANT PROMPT CAPABILITIES ---
+function setupPwaHooks() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    state.installPrompt = e;
+    const installBtn = document.getElementById("pwa-install-btn");
+    if (installBtn) {
+      installBtn.removeAttribute("disabled");
+      installBtn.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+  });
+
+  window.addEventListener('appinstalled', () => {
+    state.installPrompt = null;
+    debugLog("PWA application installed successfully");
+  });
+}
+
+function triggerPwaInstall() {
+  if (state.installPrompt) {
+    const promptEvent = state.installPrompt;
+    state.installPrompt = null;
+    promptEvent.prompt();
+    promptEvent.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        debugLog('User completed PWA installation prompt');
+      }
+      const installBtn = document.getElementById("pwa-install-btn");
+      if (installBtn) {
+        installBtn.setAttribute("disabled", "");
+        installBtn.classList.add("opacity-50", "cursor-not-allowed");
+      }
+    }).catch(() => {
+      showGlobalAlert("Install prompt is no longer available. Use your browser menu to install ez-drop.", "info");
+    });
+  } else {
+    // Fallback for unsupported devices (progressive manual instructions)
+    let isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (isIOS) {
+      showGlobalAlert("Install Guide (iOS): Tap the Share icon, then select 'Add to Home Screen'.", "info");
+    } else {
+      showGlobalAlert("Install Guide (Desktop/Android): Open the browser Menu > Install ez-drop / Add to Home screen.", "info");
+    }
+  }
+}
+
+// --- ACCESSIBILITY FOCUS / INTERACT MECHANICS ---
+function setupAccessibilityEscListeners() {
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      // Close all modals or sheets
+      document.getElementById("side-menu").classList.add("hidden");
+      closeQRScanner();
+      document.getElementById("invite-modal").classList.add("hidden");
+      toggleDebugMode(false);
+    }
+  });
+}
+
+function setupMobileLifecycleHooks() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && hasActiveTransfers()) {
+      requestTransferWakeLock();
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    releaseTransferWakeLock();
+  });
+}
+
+// --- SLIDEOVER SIDE MENU CONTROLS ---
+function toggleMenu() {
+  const menu = document.getElementById("side-menu");
+  if (menu.classList.contains("hidden")) {
+    menu.classList.remove("hidden");
+    document.getElementById("close-menu-btn").focus();
+  } else {
+    menu.classList.add("hidden");
+  }
+}
+
+function closeMenuOnOutsideClick(event) {
+  toggleMenu();
+}
+
+function showMenuSection(id) {
+  const element = document.getElementById(`menu-${id}`);
+  if (element) {
+    element.setAttribute("open", "true");
+    element.scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+function toggleSoundPreference() {
+  state.soundEnabled = !state.soundEnabled;
+  const btn = document.getElementById("sound-toggle");
+  if (state.soundEnabled) {
+    btn.textContent = "ENABLED";
+    btn.className = "brutal-btn-sm bg-[var(--yellow)] px-3 py-1 text-xs font-mono-custom font-bold uppercase audio-pulse";
+    initAudioContext();
+    playSound("connect");
+  } else {
+    btn.textContent = "MUTED";
+    btn.className = "brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-xs font-mono-custom font-bold uppercase";
+  }
+}
+
+function copyHelpToClipboard() {
+  const text = "To exchange files, open ez-drop on both devices. On the connector client, enter the 5-digit code or scan the host's QR code. Agree to connect on the host's popup prompt.";
+  navigator.clipboard.writeText(text).then(() => {
+    showGlobalAlert("Help guide copied to clipboard!", "info");
+  });
+}
+
+function factoryResetApp() {
+  try {
+    localStorage.clear();
+  } catch (err) {
+    console.warn("Local storage reset skipped:", err);
+  }
+  window.location.reload();
+}
+
+// --- SECURE CRYPTOGRAPHIC HANDSHAKE ---
+async function hashChallenge(challenge, phrase) {
+  const encoder = new TextEncoder();
+  const rawData = encoder.encode(challenge + phrase);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', rawData);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function handlePassphraseChange(val) {
+  state.passphrase = val;
+  const bar = document.getElementById("password-status-bar");
+  if (val.trim().length > 0) {
+    state.passwordEnabled = true;
+    bar.classList.remove("hidden");
+  } else {
+    state.passwordEnabled = false;
+    bar.classList.add("hidden");
+  }
+}
+
+function disablePasswordMode() {
+  document.getElementById("passphrase-input").value = "";
+  handlePassphraseChange("");
+}
+
+// --- DYNAMIC APPLICATION STATE STATE-RENDER ---
+function renderAppByState(targetState, diagnosticMsg = "") {
+  state.connectionState = targetState;
+
+  // DOM target elements mapping
+  const panels = {
+    ready: document.getElementById("state-ready"),
+    connecting: document.getElementById("state-connecting"),
+    connected: document.getElementById("state-connected"),
+    error: document.getElementById("state-error")
+  };
+
+  // Hide all panels initially
+  Object.keys(panels).forEach(key => {
+    if (panels[key]) panels[key].classList.add("hidden");
+  });
+
+  // Update header indicators
+  const headerStatus = document.getElementById("header-status-lbl");
+  const dot = document.getElementById("status-dot");
+  const dotPulse = document.getElementById("status-dot-pulse");
+  const ariaStatus = document.getElementById("aria-status");
+
+  // Set class defaults
+  dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--gold)]";
+  dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--gold)] opacity-75";
+
+  switch (targetState) {
+    case "DISCONNECTED":
+    case "READY":
+      panels.ready.classList.remove("hidden");
+      headerStatus.textContent = "Signaling Ready";
+      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#1F8A4C]";
+      dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
+      ariaStatus.textContent = "Signaling ready to connect.";
+      document.getElementById("ready-status-desc").textContent = "Waiting for entry";
+      break;
+
+    case "CONNECTING":
+      panels.connecting.classList.remove("hidden");
+      headerStatus.textContent = "Connecting";
+      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--yellow)]";
+      dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--yellow)] opacity-75";
+      document.getElementById("connecting-state-desc").textContent = diagnosticMsg || "Connecting to target namespace...";
+      ariaStatus.textContent = "Establishing client WebRTC session.";
+      break;
+
+    case "CONNECTED":
+      panels.connected.classList.remove("hidden");
+      headerStatus.textContent = "CONNECTED";
+      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#1F8A4C]";
+      dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
+      ariaStatus.textContent = `Direct connection streaming active with peer.`;
+      break;
+
+    case "ERROR":
+      panels.error.classList.remove("hidden");
+      headerStatus.textContent = "OFFLINE/ERROR";
+      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--red)]";
+      dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--red)] opacity-75";
+      document.getElementById("error-state-desc").textContent = diagnosticMsg || "WebRTC port connection failed.";
+      ariaStatus.textContent = "Connection dropped. Try again.";
+      break;
+  }
+}
+
+// --- PEERJS ENGINE (WebRTC Coordination) ---
+function initPeerSession(targetConnectCode = null) {
+  // Robust guard if Brave Shields fully block the library CDN
+  if (typeof Peer === "undefined") {
+    renderAppByState("ERROR", "Dynamic WebRTC components (PeerJS) were blocked from loading. Please disable Brave Shields / Strict Adblocking on this domain to connect.");
+    return;
+  }
+
+  if (state.peer) {
+    state.peer.destroy();
+  }
+
+  // Explicitly determine host or joiner PeerJS ID structure
+  const peerId = targetConnectCode ? `${PEER_PREFIX}peer-${Math.random().toString(36).substr(2, 6)}` : `${ROOM_PREFIX}${state.roomCode}`;
+
+  state.peer = new Peer(peerId, {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    },
+    debug: DEBUG_LOGS ? 1 : 0
+  });
+
+  state.peer.on("open", (id) => {
+    debugLog("My PeerJS dynamic ID registered:", id);
+    
+    if (targetConnectCode) {
+      renderAppByState("CONNECTING", `Directly calling Room Code ${targetConnectCode}...`);
+      initiateDirectHandshake(`${ROOM_PREFIX}${targetConnectCode}`);
+    } else {
+      updateRoomTicket(state.roomCode);
+      renderAppByState("READY");
+    }
+  });
+
+  state.peer.on("connection", (incomingConn) => {
+    // Multi-peer protection: Clean dead sessions if active connection exists
+    if (state.conn) {
+      incomingConn.close();
+      return;
+    }
+    setupConnectionCallbacks(incomingConn, true);
+  });
+
+  state.peer.on("error", (err) => {
+    console.error("PeerJS native error caught:", err.type, err);
+    
+    if (err.type === "unavailable-id") {
+      // If the room code was taken, regenerate code *once* and retry
+      state.roomCode = generateRandomRoomCode();
+      initPeerSession();
+    } else if (err.type === "peer-unavailable") {
+      renderAppByState("ERROR", "Target room key not found. Verify the code on the host device.");
+    } else {
+      renderAppByState("ERROR", `Socket connection error: ${err.message}`);
+    }
+  });
+
+  state.peer.on("disconnected", () => {
+    console.warn("Peer service server disconnected. Retrying connection...");
+    state.peer.reconnect();
+  });
+}
+
+function initiateDirectHandshake(targetPeerId) {
+  const options = { reliable: true };
+  const activeConn = state.peer.connect(targetPeerId, options);
+  setupConnectionCallbacks(activeConn, false);
+}
+
+function handleTargetInput(input) {
+  // Clean target non-digits
+  input.value = input.value.replace(/\D/g, '');
+  if (input.value.length === 5) {
+    connectToRoomBtn();
+  }
+}
+
+function connectToRoomBtn() {
+  const targetInput = document.getElementById("target-room-input").value.trim();
+  if (!targetInput.match(/^\d{5}$/)) {
+    showGlobalAlert("Verify Room Code: must consist of precisely 5 digits.", "error");
+    return;
+  }
+  if (targetInput === state.roomCode) {
+    showGlobalAlert("You cannot establish a WebRTC loopback with your own room code.", "error");
+    return;
+  }
+  renderAppByState("CONNECTING", `Establishing encrypted channel with room ${targetInput}...`);
+  initiateDirectHandshake(`${ROOM_PREFIX}${targetInput}`);
+}
+
+// --- RECONNECT & SESSION RECOVERY ---
+function tryConnectionRecovery() {
+  const targetInput = document.getElementById("target-room-input").value.trim();
+  if (targetInput.match(/^\d{5}$/)) {
+    connectToRoomBtn();
+  } else {
+    initPeerSession();
+  }
+}
+
+function generateNewRoomSession() {
+  state.roomCode = generateRandomRoomCode();
+  initPeerSession();
+}
+
+// --- WEBRTC CONNECTION HANDLING PROTOCOL ---
+let pendingInviteConnection = null;
+
+function setupConnectionCallbacks(connInstance, isHost) {
+  const handleOpen = () => {
+    state.conn = connInstance;
+
+    // Challenge-Proof Password Handshake Negotiation
+    if (state.passwordEnabled) {
+      const secretChallenge = Math.random().toString(36).substring(2, 10);
+      connInstance.send({
+        type: "password-challenge",
+        from: state.identity.name,
+        payload: { challenge: secretChallenge }
+      });
+      state.connectionState = "PASSWORD_CHECK";
+      return;
+    }
+
+    if (isHost) {
+      // Waiting for invite handshake info
+      renderAppByState("CONNECTING", "Negotiating incoming verification handshake...");
+    } else {
+      // Client triggers connection handshake packet
+      connInstance.send({
+        type: "hello",
+        from: state.identity.name,
+        payload: { version: APP_VERSION }
+      });
+    }
+  };
+
+  // Fix PeerJS Race Condition where connInstance is already open when event handler binds
+  if (connInstance.open) {
+    handleOpen();
+  } else {
+    connInstance.on("open", handleOpen);
+  }
+
+  connInstance.on("data", (data) => {
+    processIncomingMessage(data, connInstance);
+  });
+
+  connInstance.on("close", () => {
+    handleDisconnectTransition();
+  });
+
+  connInstance.on("error", (err) => {
+    console.error("Data channel err:", err);
+    handleDisconnectTransition();
+  });
+}
+
+function getPeerConnection(connInstance = state.conn) {
+  if (!connInstance) return null;
+  return connInstance.peerConnection || connInstance._pc || connInstance.pc || null;
+}
+
+function startNetworkPathMonitoring(connInstance = state.conn) {
+  stopNetworkPathMonitoring();
+  state.networkPath = {
+    mode: "unknown",
+    detail: "Checking selected WebRTC route...",
+    monitorId: null,
+    remoteMode: state.networkPath.remoteMode || "unknown"
+  };
+  renderNetworkPath();
+
+  const pc = getPeerConnection(connInstance);
+  if (!pc || typeof pc.getStats !== "function") {
+    updateNetworkPath("unknown", "Route details unavailable in this browser.");
+    return;
+  }
+
+  let attempts = 0;
+  const inspect = async () => {
+    attempts++;
+    try {
+      const result = await inspectSelectedCandidatePair(pc);
+      if (result.mode !== "unknown" || attempts >= 12) {
+        updateNetworkPath(result.mode, result.detail, { notifyPeer: true });
+        stopNetworkPathMonitoring();
+      }
+    } catch (err) {
+      debugLog("Route inspection skipped:", err);
+      if (attempts >= 4) {
+        updateNetworkPath("unknown", "Could not inspect the selected browser route.", { notifyPeer: true });
+        stopNetworkPathMonitoring();
+      }
+    }
+  };
+
+  inspect();
+  state.networkPath.monitorId = setInterval(inspect, 1500);
+}
+
+function stopNetworkPathMonitoring() {
+  if (state.networkPath.monitorId) {
+    clearInterval(state.networkPath.monitorId);
+  }
+  state.networkPath.monitorId = null;
+}
+
+async function inspectSelectedCandidatePair(pc) {
+  const stats = await pc.getStats();
+  let selectedPair = null;
+
+  stats.forEach(report => {
+    if (
+      report.type === "candidate-pair" &&
+      (report.selected || (report.nominated && report.state === "succeeded"))
+    ) {
+      selectedPair = report;
+    }
+  });
+
+  if (!selectedPair) {
+    stats.forEach(report => {
+      if (!selectedPair && report.type === "transport" && report.selectedCandidatePairId) {
+        selectedPair = stats.get(report.selectedCandidatePairId);
+      }
+    });
+  }
+
+  if (!selectedPair) {
+    return { mode: "unknown", detail: "Waiting for ICE to select a route..." };
+  }
+
+  const local = stats.get(selectedPair.localCandidateId);
+  const remote = stats.get(selectedPair.remoteCandidateId);
+  const localType = local?.candidateType || "unknown";
+  const remoteType = remote?.candidateType || "unknown";
+  const localAddress = getCandidateAddress(local);
+  const remoteAddress = getCandidateAddress(remote);
+
+  if (localType === "host" && remoteType === "host") {
+    return {
+      mode: "lan",
+      detail: `Local network route selected (${formatCandidateAddress(localAddress)} -> ${formatCandidateAddress(remoteAddress)}).`
+    };
+  }
+
+  if (localType === "relay" || remoteType === "relay") {
+    return {
+      mode: "relay",
+      detail: "TURN relay route selected. File data is relayed because direct peer traffic was blocked."
+    };
+  }
+
+  return {
+    mode: "direct",
+    detail: `Direct internet/NAT route selected (${localType} -> ${remoteType}).`
+  };
+}
+
+function getCandidateAddress(candidate) {
+  return candidate?.address || candidate?.ip || candidate?.url || "";
+}
+
+function formatCandidateAddress(address) {
+  if (!address) return "browser-private address";
+  if (address.endsWith(".local")) return "browser-private LAN address";
+  return address;
+}
+
+function updateNetworkPath(mode, detail, options = {}) {
+  const effectiveMode = chooseEffectiveNetworkMode(mode, state.networkPath.remoteMode);
+  state.networkPath.mode = effectiveMode;
+  state.networkPath.detail = effectiveMode === "lan" && mode !== "lan"
+    ? "Local network route confirmed by the other device. LAN transfer profile enabled."
+    : detail;
+  renderNetworkPath();
+
+  if (options.notifyPeer && state.conn && state.connectionState === "CONNECTED") {
+    state.conn.send({
+      type: "route-info",
+      payload: {
+        mode,
+        effectiveMode,
+        detail
+      }
+    });
+  }
+}
+
+function handleRemoteRouteInfo(payload) {
+  state.networkPath.remoteMode = payload?.effectiveMode || payload?.mode || "unknown";
+
+  if (state.networkPath.remoteMode === "lan" && state.networkPath.mode !== "lan") {
+    updateNetworkPath("lan", "Local network route confirmed by the other device. LAN transfer profile enabled.");
+    return;
+  }
+
+  renderNetworkPath();
+}
+
+function chooseEffectiveNetworkMode(localMode, remoteMode) {
+  if (localMode === "lan" || remoteMode === "lan") return "lan";
+  if (localMode === "relay" || remoteMode === "relay") return "relay";
+  if (localMode === "direct" || remoteMode === "direct") return "direct";
+  return "unknown";
+}
+
+function renderNetworkPath() {
+  const badge = document.getElementById("network-path-badge");
+  const detail = document.getElementById("network-path-detail");
+  if (!badge || !detail) return;
+
+  const labels = {
+    lan: "Route: LAN fast path",
+    direct: "Route: direct P2P",
+    relay: "Route: relay fallback",
+    unknown: "Route: detecting"
+  };
+  const classes = {
+    lan: "font-mono-custom text-[9px] uppercase bg-[var(--ok)] text-white brutal-border px-2 py-0.5",
+    direct: "font-mono-custom text-[9px] uppercase bg-[var(--yellow)] text-black brutal-border px-2 py-0.5",
+    relay: "font-mono-custom text-[9px] uppercase bg-[var(--correction)] text-black brutal-border px-2 py-0.5",
+    unknown: "font-mono-custom text-[9px] uppercase bg-[var(--muted-paper)] text-[var(--ink)] brutal-border px-2 py-0.5"
+  };
+
+  badge.textContent = labels[state.networkPath.mode] || labels.unknown;
+  badge.className = classes[state.networkPath.mode] || classes.unknown;
+  const profile = state.networkPath.mode === "lan"
+    ? ` Fast profile: ${formatBytes(LAN_CHUNK_SIZE)} chunks, ${formatBytes(LAN_MAX_BUFFERED_AMOUNT)} send buffer.`
+    : "";
+  detail.textContent = `${state.networkPath.detail}${profile}`;
+}
+
+function markConnectionReady(connInstance, peerName) {
+  state.connectedPeer = { id: connInstance.peer, name: peerName };
+  renderAppByState("CONNECTED");
+  document.getElementById("peer-name-display").textContent = escapeHtml(peerName);
+  renderNetworkPath();
+  playSound("connect");
+  initiatePingLoop();
+  startNetworkPathMonitoring(connInstance);
+}
+
+function waitForRouteClassification(timeoutMs = 2500) {
+  if (state.networkPath.mode !== "unknown") {
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    const startedAt = Date.now();
+    const check = () => {
+      if (state.networkPath.mode !== "unknown" || Date.now() - startedAt >= timeoutMs) {
+        resolve();
+      } else {
+        setTimeout(check, 100);
+      }
+    };
+    check();
+  });
+}
+
+function processIncomingMessage(msg, connInstance) {
+  if (!msg || !msg.type) return;
+
+  switch (msg.type) {
+    case "password-challenge":
+      if (!state.passwordEnabled) {
+        connInstance.send({ type: "file-error", payload: { error: "Security mode mismatch: host requires matching passwords." } });
+        connInstance.close();
+        return;
+      }
+      hashChallenge(msg.payload.challenge, state.passphrase).then(hashedProof => {
+        connInstance.send({
+          type: "password-proof",
+          from: state.identity.name,
+          payload: { proof: hashedProof, challenge: msg.payload.challenge }
+        });
+      });
+      break;
+
+    case "password-proof":
+      hashChallenge(msg.payload.challenge, state.passphrase).then(localProof => {
+        if (localProof === msg.payload.proof) {
+          connInstance.send({
+            type: "hello",
+            from: msg.from,
+            payload: { version: APP_VERSION }
+          });
+        } else {
+          connInstance.send({ type: "file-error", payload: { error: "Security verification failed. Mismatched passphrase." } });
+          setTimeout(() => connInstance.close(), 500);
+        }
+      });
+      break;
+
+    case "hello":
+      // Open Connection Invitation Popup Modal
+      pendingInviteConnection = connInstance;
+      document.getElementById("invite-peer-name").textContent = escapeHtml(msg.from);
+      document.getElementById("invite-peer-meta").textContent = `ID: ${connInstance.peer}`;
+      document.getElementById("invite-modal").classList.remove("hidden");
+      document.getElementById("accept-invite-btn").focus();
+      playSound("connect");
+      break;
+
+    case "accept":
+      markConnectionReady(connInstance, msg.from);
+      break;
+
+    case "decline":
+      showGlobalAlert("WebRTC handshake was declined by the remote device.", "error");
+      terminateSession();
+      break;
+
+    case "text":
+      appendChatBubble(msg.from, msg.payload.text, false);
+      break;
+
+    case "ping":
+      connInstance.send({ type: "pong", timestamp: Date.now() });
+      break;
+
+    case "pong":
+      const now = Date.now();
+      state.latency = now - msg.timestamp;
+      updatePingIndicator(state.latency);
+      break;
+
+    case "peer-status":
+      if (state.connectedPeer) {
+        state.connectedPeer.name = msg.payload.name;
+        document.getElementById("peer-name-display").textContent = escapeHtml(msg.payload.name);
+      }
+      break;
+
+    case "route-info":
+      handleRemoteRouteInfo(msg.payload);
+      break;
+
+    case "file-meta":
+      handleFileMetadata(msg.payload);
+      break;
+
+    case "file-chunk":
+      handleIncomingChunk(msg.payload);
+      break;
+
+    case "file-complete":
+      finalizeIncomingFile(msg.payload.transferId);
+      break;
+
+    case "file-cancel":
+      handleTransferCancellation(msg.payload.transferId, false);
+      break;
+
+    case "file-error":
+      showGlobalAlert(`Transmission Error: ${msg.payload.error}`, "error");
+      playSound("error");
+      break;
+  }
+}
+
+// Defensive error-guarded implementation to prevent UI freezes on clicking modals
+function respondToInvitation(accepted) {
+  document.getElementById("invite-modal").classList.add("hidden");
+  if (!pendingInviteConnection) {
+    showGlobalAlert("No pending invitation found or connection already timed out.", "error");
+    return;
+  }
+
+  try {
+    if (accepted) {
+      state.conn = pendingInviteConnection;
+      const peerName = document.getElementById("invite-peer-name").textContent;
+
+      state.conn.send({
+        type: "accept",
+        from: state.identity.name,
+        payload: {}
+      });
+
+      markConnectionReady(state.conn, peerName);
+    } else {
+      state.conn = null;
+      state.connectedPeer = null;
+      pendingInviteConnection.send({ type: "decline", from: state.identity.name });
+      const connToClose = pendingInviteConnection;
+      setTimeout(() => {
+        try {
+          connToClose.close();
+        } catch (e) {
+          console.warn("Error closing rejected connection:", e);
+        }
+      }, 200);
+      pendingInviteConnection = null;
+      renderAppByState("READY");
+    }
+  } catch (err) {
+    console.error("Error inside respondToInvitation flow:", err);
+    showGlobalAlert("Failed to respond to connection request: " + err.message, "error");
+    terminateSession();
+  }
+}
+
+// Terminate Session cleanup routines
+function terminateSession() {
+  if (state.conn) {
+    state.conn.close();
+  }
+  handleDisconnectTransition();
+}
+
+function handleDisconnectTransition() {
+  stopNetworkPathMonitoring();
+  state.conn = null;
+  state.connectedPeer = null;
+  state.networkPath = { mode: "unknown", detail: "Route: detecting", monitorId: null, remoteMode: "unknown" };
+  clearInterval(state.pingIntervalId);
+  renderAppByState("READY");
+}
+
+// --- LATENCY MONITORING PINGS ---
+function initiatePingLoop() {
+  clearInterval(state.pingIntervalId);
+  state.pingIntervalId = setInterval(() => {
+    if (state.conn && state.connectionState === "CONNECTED") {
+      state.conn.send({
+        type: "ping",
+        timestamp: Date.now()
+      });
+    }
+  }, 3000);
+}
+
+function updatePingIndicator(latency) {
+  // Latency calculation remains alive, but visual stats elements are completely hidden from user view
+}
+
+function updateRoomTicket(roomCode) {
+  document.getElementById("room-code-display").textContent = roomCode;
+  const loc = window.location;
+  state.shareUrl = `${loc.protocol}//${loc.host}${loc.pathname}?r=${roomCode}`;
+  generateQrLayout(state.shareUrl);
+}
+
+function generateQrLayout(url) {
+  const qrContainer = document.getElementById("qrcode");
+  qrContainer.innerHTML = "";
+  try {
+    new QRCode(qrContainer, {
+      text: url,
+      width: 140,
+      height: 140,
+      colorDark: "#111111",
+      colorLight: "#FFFFFF",
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    document.getElementById("qr-fallback-msg").classList.add("hidden");
+  } catch (err) {
+    console.error("QR construction crashed", err);
+    document.getElementById("qr-fallback-msg").classList.remove("hidden");
+  }
+}
+
+// --- QR SCANNER LAZY LOAD CONTROL ---
+function openQRScanner() {
+  const modal = document.getElementById("scanner-modal");
+  modal.classList.remove("hidden");
+  document.getElementById("close-scanner-btn").focus();
+
+  state.scannerInstance = new Html5Qrcode("interactive-reader");
+  const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+
+  state.scannerInstance.start(
+    { facingMode: "environment" },
+    config,
+    onQrScanSuccess,
+    onQrScanFailure
+  ).catch(err => {
+    console.error("Camera fail:", err);
+    showGlobalAlert("Failed to initialize system camera hardware.", "error");
+    closeQRScanner();
+  });
+}
+
+function closeQRScanner() {
+  const modal = document.getElementById("scanner-modal");
+  modal.classList.add("hidden");
+  if (state.scannerInstance) {
+    state.scannerInstance.stop().then(() => {
+      state.scannerInstance = null;
+    }).catch(err => {
+      console.error("Scanner stream exit failure:", err);
+    });
+  }
+}
+
+function onQrScanSuccess(decodedText) {
+  try {
+    const url = new URL(decodedText);
+    const code = url.searchParams.get("r");
+    if (code && code.match(/^\d{5}$/)) {
+      closeQRScanner();
+      document.getElementById("target-room-input").value = code;
+      connectToRoomBtn();
+    } else {
+      showGlobalAlert("Invalid ez-drop ticket decoded.", "error");
+    }
+  } catch (err) {
+    showGlobalAlert("QR format not supported.", "error");
+  }
+}
+
+function onQrScanFailure(error) {
+  // Ignored for scan stream fluency
+}
+
+// --- CHAT MESSAGE & TEXT PIPELINE ---
+function sendTextMessage() {
+  const txtInput = document.getElementById("text-input");
+  const msgText = txtInput.value.trim();
+  if (!msgText) return;
+
+  if (!state.conn || state.connectionState !== "CONNECTED") {
+    showGlobalAlert("Establishing connection required before sending text snippets.", "error");
+    return;
+  }
+
+  state.conn.send({
+    type: "text",
+    from: state.identity.name,
+    payload: { text: msgText }
+  });
+
+  appendChatBubble(state.identity.name, msgText, true);
+  addHistoryRecord("text", `Text: ${msgText.substring(0, 30)}...`, true);
+  txtInput.value = "";
+}
+
+function pasteFromClipboard() {
+  navigator.clipboard.readText().then(clipText => {
+    document.getElementById("text-input").value = clipText;
+  }).catch(err => {
+    showGlobalAlert("Clipboard permissions denied.", "error");
+  });
+}
+
+function appendChatBubble(sender, text, isMe) {
+  document.getElementById("queue-empty-state").classList.add("hidden");
+  const streamContainer = document.getElementById("transfers-container");
+  
+  const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const wrap = document.createElement("div");
+  wrap.className = `flex flex-col gap-1 w-full max-w-lg mb-2 ${isMe ? 'self-end ml-auto' : 'self-start mr-auto'}`;
+
+  const card = document.createElement("div");
+  card.className = `brutal-border p-3 brutal-shadow-sm ${isMe ? 'bg-[var(--surface-warm)]' : 'bg-[var(--muted-paper)]'}`;
+  
+  const header = document.createElement("div");
+  header.className = "flex justify-between items-center text-[10px] font-mono-custom font-bold border-b border-dashed border-[var(--ink)] pb-1 mb-1.5 opacity-80";
+  header.innerHTML = `<span>${escapeHtml(sender)}</span> <span>${timeStr}</span>`;
+  
+  const body = document.createElement("div");
+  body.className = "text-xs font-mono-custom whitespace-pre-wrap break-words";
+  body.textContent = text;
+
+  const footer = document.createElement("div");
+  footer.className = "flex justify-end gap-2 mt-2 pt-1 border-t border-dashed border-[var(--ink)]";
+  
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "text-[9px] font-mono-custom uppercase tracking-wider underline font-bold";
+  copyBtn.textContent = "Copy";
+  copyBtn.onclick = () => {
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    copyBtn.textContent = "Copied!";
+    setTimeout(() => { copyBtn.textContent = "Copy"; }, 1000);
+  };
+
+  footer.appendChild(copyBtn);
+  card.appendChild(header);
+  card.appendChild(body);
+  card.appendChild(footer);
+  wrap.appendChild(card);
+  streamContainer.appendChild(wrap);
+
+  streamContainer.scrollTop = streamContainer.scrollHeight;
+}
+
+// --- FILE DRAG & DROP PIPELINE ---
+function setupDragAndDrop() {
+  const dropZone = document.getElementById("drop-zone");
+  if (!dropZone) return;
+
+  dropZone.addEventListener("click", () => {
+    document.getElementById("file-picker").click();
+  });
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      dropZone.classList.add("bg-[var(--yellow)]");
+    }, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("bg-[var(--yellow)]");
+    }, false);
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    handleFilesArray(files);
+  });
+}
+
+function handleFileSelection(event) {
+  const files = event.target.files;
+  handleFilesArray(files);
+}
+
+function handleFilesArray(files) {
+  if (!files || files.length === 0) return;
+  if (!state.conn || state.connectionState !== "CONNECTED") {
+    showGlobalAlert("No active WebRTC peer connection.", "error");
+    return;
+  }
+  for (let i = 0; i < files.length; i++) {
+    initiateOutgoingFileTransfer(files[i]);
+  }
+}
+
+function hasActiveTransfers() {
+  const isActive = transfer => transfer.status === "QUEUED" || transfer.status === "SENDING" || transfer.status === "RECEIVING";
+  return Array.from(state.outgoingTransfers.values()).some(isActive) || Array.from(state.incomingTransfers.values()).some(isActive);
+}
+
+async function requestTransferWakeLock() {
+  if (!("wakeLock" in navigator) || state.wakeLock || document.visibilityState !== "visible") return;
+
+  try {
+    state.wakeLock = await navigator.wakeLock.request("screen");
+    state.wakeLock.addEventListener("release", () => {
+      state.wakeLock = null;
+    });
+  } catch (err) {
+    debugLog("Wake lock unavailable:", err);
+  }
+}
+
+function releaseTransferWakeLock() {
+  if (!state.wakeLock || hasActiveTransfers()) return;
+  state.wakeLock.release().catch(() => {});
+  state.wakeLock = null;
+}
+
+// --- RELIABLE ADAPTIVE CHUNK STREAMING ---
+async function initiateOutgoingFileTransfer(file) {
+  requestTransferWakeLock();
+  await waitForRouteClassification();
+  const transferId = `tx-${Math.random().toString(36).substr(2, 9)}`;
+  const chunkSize = getPreferredChunkSize();
+  
+  const fileMeta = {
+    transferId: transferId,
+    name: file.name,
+    size: file.size,
+    type: file.type || "application/octet-stream",
+    totalChunks: Math.ceil(file.size / chunkSize),
+    chunkSize: chunkSize
+  };
+
+  state.outgoingTransfers.set(transferId, {
+    file: file,
+    meta: fileMeta,
+    sentBytes: 0,
+    status: "QUEUED",
+    startTime: Date.now()
+  });
+
+  renderTransferCard(transferId, "SENDING", fileMeta);
+
+  state.conn.send({
+    type: "file-meta",
+    from: state.identity.name,
+    payload: fileMeta
+  });
+
+  try {
+    await runAdaptiveBackpressureStream(transferId);
+  } catch (err) {
+    console.error("Transmitter crashed:", err);
+    handleTransferError(transferId, "Streaming connection interrupted", true);
+  }
+}
+
+async function runAdaptiveBackpressureStream(transferId) {
+  const transferObj = state.outgoingTransfers.get(transferId);
+  if (!transferObj) return;
+
+  transferObj.status = "SENDING";
+  transferObj.startTime = Date.now();
+
+  const file = transferObj.file;
+  const meta = transferObj.meta;
+  const chunkSize = meta.chunkSize || CHUNK_SIZE;
+  const dc = state.conn.dataChannel;
+
+  let offset = 0;
+  let chunkIdx = 0;
+
+  while (offset < file.size) {
+    const currentObj = state.outgoingTransfers.get(transferId);
+    if (!currentObj || currentObj.status === "CANCELLED") {
+      return;
+    }
+
+    // Adaptive Backpressure throttling calculation
+    if (dc && dc.bufferedAmount > getMaxBufferedAmount()) {
+      await waitForDataChannelDrain(dc);
+    }
+
+    const nextSlice = file.slice(offset, offset + chunkSize);
+    let arrayBuffer;
+    try {
+      arrayBuffer = await nextSlice.arrayBuffer();
+    } catch (err) {
+      handleTransferError(transferId, "Disk read failed", true);
+      return;
+    }
+
+    state.conn.send({
+      type: "file-chunk",
+      payload: {
+        transferId: transferId,
+        chunkIndex: chunkIdx,
+        data: arrayBuffer
+      }
+    });
+
+    offset += chunkSize;
+    chunkIdx++;
+    
+    currentObj.sentBytes = Math.min(offset, file.size);
+    updateTransferProgress(transferId, "SENDING", currentObj.sentBytes, file.size);
+
+    if (chunkIdx % 16 === 0) {
+      await nextFrame();
+    }
+  }
+
+  state.conn.send({
+    type: "file-complete",
+    payload: { transferId: transferId }
+  });
+
+  transferObj.status = "COMPLETE";
+  updateTransferProgress(transferId, "COMPLETE", file.size, file.size);
+  addHistoryRecord("file-sent", `${file.name} (${formatBytes(file.size)})`, true);
+  playSound("complete");
+  releaseTransferWakeLock();
+}
+
+function waitForDataChannelDrain(dc) {
+  const lowWatermark = getLowBufferedAmount();
+  if (!dc || dc.readyState !== "open" || dc.bufferedAmount <= lowWatermark) {
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    let settled = false;
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      dc.removeEventListener?.("bufferedamountlow", onLow);
+      resolve();
+    };
+    const onLow = () => cleanup();
+
+    try {
+      dc.bufferedAmountLowThreshold = lowWatermark;
+      dc.addEventListener?.("bufferedamountlow", onLow, { once: true });
+    } catch (err) {
+      // Some WebRTC shims expose partial DataChannel APIs; polling keeps them working.
+    }
+
+    const poll = () => {
+      if (settled) return;
+      if (dc.readyState !== "open" || dc.bufferedAmount <= lowWatermark) {
+        cleanup();
+      } else {
+        setTimeout(poll, 30);
+      }
+    };
+    poll();
+  });
+}
+
+// --- RECIPIENT FILE HANDLING ---
+function handleFileMetadata(meta) {
+  if (meta.size > 800 * 1024 * 1024) {
+    showGlobalAlert(`Large file incoming (${(meta.size / (1024*1024)).toFixed(0)}MB). Keep browser in foreground.`, "info");
+  }
+
+  state.incomingTransfers.set(meta.transferId, {
+    meta: meta,
+    chunks: [],
+    receivedChunksCount: 0,
+    receivedBytes: 0,
+    status: "RECEIVING",
+    startTime: Date.now()
+  });
+
+  requestTransferWakeLock();
+  renderTransferCard(meta.transferId, "RECEIVING", meta);
+}
+
+function handleIncomingChunk(payload) {
+  const transferId = payload.transferId;
+  const incoming = state.incomingTransfers.get(transferId);
+  if (!incoming || incoming.status !== "RECEIVING") return;
+
+  incoming.chunks[payload.chunkIndex] = payload.data;
+  incoming.receivedChunksCount++;
+  incoming.receivedBytes += payload.data.byteLength;
+
+  updateTransferProgress(transferId, "RECEIVING", incoming.receivedBytes, incoming.meta.size);
+}
+
+function finalizeIncomingFile(transferId) {
+  const incoming = state.incomingTransfers.get(transferId);
+  if (!incoming) return;
+
+  incoming.status = "COMPLETE";
+  updateTransferProgress(transferId, "COMPLETE", incoming.meta.size, incoming.meta.size);
+  addHistoryRecord("file-received", `${incoming.meta.name} (${formatBytes(incoming.meta.size)})`, false);
+  playSound("complete");
+
+  try {
+    const fileBlob = new Blob(incoming.chunks, { type: incoming.meta.type });
+    const objectUrl = URL.createObjectURL(fileBlob);
+    
+    const downloadBtn = document.getElementById(`dl-btn-${transferId}`);
+    if (downloadBtn) {
+      downloadBtn.href = objectUrl;
+      downloadBtn.download = incoming.meta.name;
+      downloadBtn.rel = "noopener";
+      downloadBtn.classList.remove("hidden");
+    }
+
+    if (isMobileDevice()) {
+      showGlobalAlert(`Received ${incoming.meta.name}. Tap Save in the transfer card to store it on this device.`, "info");
+    } else {
+      // Desktop browsers consistently allow user-session initiated object URL downloads.
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = incoming.meta.name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    }
+
+    releaseTransferWakeLock();
+
+  } catch (err) {
+    console.error("Blob compilation crashed", err);
+    handleTransferError(transferId, "Blob parsing failure", false);
+  }
+}
+
+// --- RENDER STREAM TRANSFER PROGRESS CARDS ---
+function renderTransferCard(transferId, direction, meta) {
+  document.getElementById("queue-empty-state").classList.add("hidden");
+  const container = document.getElementById("transfers-container");
+
+  const card = document.createElement("div");
+  card.id = `card-${transferId}`;
+  card.className = "brutal-border p-3 bg-[var(--surface)] brutal-shadow-sm flex flex-col gap-2 relative";
+
+  const heading = document.createElement("div");
+  heading.className = "flex justify-between items-start gap-2 border-b border-[var(--ink)] pb-1";
+  
+  const titleWrapper = document.createElement("div");
+  titleWrapper.className = "min-w-0 flex-grow";
+  
+  const title = document.createElement("h4");
+  title.className = "font-bold text-xs truncate uppercase font-mono-custom";
+  title.textContent = meta.name;
+  
+  const specs = document.createElement("div");
+  specs.className = "text-[9px] font-mono-custom text-[var(--muted)]";
+  specs.textContent = `${formatBytes(meta.size)} • ${direction}`;
+  
+  titleWrapper.appendChild(title);
+  titleWrapper.appendChild(specs);
+
+  const actionWrapper = document.createElement("div");
+  actionWrapper.className = "flex items-center gap-1.5";
+
+  const dlBtn = document.createElement("a");
+  dlBtn.id = `dl-btn-${transferId}`;
+  dlBtn.className = "hidden brutal-btn-sm bg-[var(--yellow)] px-2 py-0.5 text-[9px] font-mono-custom font-bold uppercase text-black";
+  dlBtn.textContent = "Save";
+  
+  const cancelBtn = document.createElement("button");
+  cancelBtn.id = `cancel-btn-${transferId}`;
+  cancelBtn.className = "brutal-btn-sm bg-[var(--muted-paper)] px-2 py-0.5 text-[9px] font-mono-custom font-bold uppercase text-[var(--red)]";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.onclick = () => handleTransferCancellation(transferId, true);
+
+  actionWrapper.appendChild(dlBtn);
+  actionWrapper.appendChild(cancelBtn);
+
+  heading.appendChild(titleWrapper);
+  heading.appendChild(actionWrapper);
+
+  const progressWrapper = document.createElement("div");
+  progressWrapper.className = "flex flex-col gap-1";
+
+  const barOuter = document.createElement("div");
+  barOuter.className = "w-full brutal-border h-3.5 bg-[var(--muted-paper)] relative overflow-hidden";
+
+  const barInner = document.createElement("div");
+  barInner.id = `bar-${transferId}`;
+  barInner.className = `h-full w-0 transition-all duration-100 ${direction === "SENDING" ? 'bg-[var(--blue)]' : 'bg-[var(--gold)]'}`;
+
+  barOuter.appendChild(barInner);
+
+  const footer = document.createElement("div");
+  footer.className = "flex justify-between items-center text-[9px] font-mono-custom uppercase opacity-80";
+  
+  const percentVal = document.createElement("span");
+  percentVal.id = `percent-${transferId}`;
+  percentVal.textContent = "0%";
+
+  const speedVal = document.createElement("span");
+  speedVal.id = `speed-${transferId}`;
+  speedVal.textContent = "Initiating...";
+
+  footer.appendChild(percentVal);
+  footer.appendChild(speedVal);
+
+  progressWrapper.appendChild(barOuter);
+  progressWrapper.appendChild(footer);
+
+  card.appendChild(heading);
+  card.appendChild(progressWrapper);
+
+  container.prepend(card);
+}
+
+const pendingProgressUpdates = new Map();
+let progressUpdateRaf = 0;
+
+function updateTransferProgress(transferId, direction, current, total) {
+  pendingProgressUpdates.set(transferId, { direction, current, total });
+
+  if (!progressUpdateRaf) {
+    progressUpdateRaf = requestAnimationFrame(flushTransferProgressUpdates);
+  }
+}
+
+function flushTransferProgressUpdates() {
+  progressUpdateRaf = 0;
+  const updates = Array.from(pendingProgressUpdates.entries());
+  pendingProgressUpdates.clear();
+
+  for (const [transferId, progress] of updates) {
+    applyTransferProgress(transferId, progress.direction, progress.current, progress.total);
+  }
+}
+
+function applyTransferProgress(transferId, direction, current, total) {
+  const percentage = Math.min(Math.floor((current / total) * 100), 100);
+  
+  const bar = document.getElementById(`bar-${transferId}`);
+  if (bar) bar.style.width = `${percentage}%`;
+
+  const pct = document.getElementById(`percent-${transferId}`);
+  if (pct) pct.textContent = `${percentage}%`;
+
+  const tracker = direction === "SENDING" ? state.outgoingTransfers.get(transferId) : state.incomingTransfers.get(transferId);
+  if (tracker) {
+    const timeDiff = (Date.now() - tracker.startTime) / 1000;
+    const currentSpeed = timeDiff > 0 ? (current / timeDiff) : 0;
+    
+    const speedText = document.getElementById(`speed-${transferId}`);
+    if (speedText) {
+      if (percentage === 100) {
+        speedText.textContent = "Finished";
+        const cancelBtn = document.getElementById(`cancel-btn-${transferId}`);
+        if (cancelBtn) cancelBtn.classList.add("hidden");
+      } else {
+        speedText.textContent = `${formatBytes(currentSpeed)}/S`;
+      }
+    }
+  }
+}
+
+function handleTransferCancellation(transferId, initiatedLocally) {
+  const outgoing = state.outgoingTransfers.get(transferId);
+  const incoming = state.incomingTransfers.get(transferId);
+  
+  if (outgoing) outgoing.status = "CANCELLED";
+  if (incoming) incoming.status = "CANCELLED";
+
+  const card = document.getElementById(`card-${transferId}`);
+  if (card) {
+    card.classList.add("opacity-40");
+    const cancelBtn = document.getElementById(`cancel-btn-${transferId}`);
+    if (cancelBtn) cancelBtn.classList.add("hidden");
+    const speedEl = document.getElementById(`speed-${transferId}`);
+    if (speedEl) speedEl.textContent = "Cancelled";
+  }
+
+  if (initiatedLocally && state.conn) {
+    state.conn.send({
+      type: "file-cancel",
+      payload: { transferId: transferId }
+    });
+  }
+  releaseTransferWakeLock();
+}
+
+function handleTransferError(transferId, errorMsg, isOutgoing) {
+  const card = document.getElementById(`card-${transferId}`);
+  if (card) {
+    card.classList.add("border-[var(--red)]");
+    const speedEl = document.getElementById(`speed-${transferId}`);
+    if (speedEl) speedEl.textContent = `Error: ${errorMsg}`;
+    const cancelBtn = document.getElementById(`cancel-btn-${transferId}`);
+      if (cancelBtn) cancelBtn.classList.add("hidden");
+  }
+  releaseTransferWakeLock();
+}
+
+function formatBytes(bytes, decimals = 1) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function clearSessionLogs() {
+  document.getElementById("transfers-container").innerHTML = "";
+  document.getElementById("queue-empty-state").classList.remove("hidden");
+  state.outgoingTransfers.clear();
+  state.incomingTransfers.clear();
+}
+
+// --- SIMPLE SESSION HISTORY ---
+function addHistoryRecord(type, description, isMe) {
+  const histContainer = document.getElementById("history-container");
+  // Remove placeholder empty text
+  if (histContainer.querySelector("p.italic")) {
+    histContainer.innerHTML = "";
+  }
+
+  const item = document.createElement("div");
+  item.className = "flex justify-between items-center p-2 bg-[var(--surface)] brutal-border border-2";
+  
+  const meta = document.createElement("span");
+  meta.className = "truncate mr-2";
+  meta.innerHTML = `<strong class="uppercase text-[9px] px-1 bg-[var(--muted-paper)] mr-1">${type}</strong> ${escapeHtml(description)}`;
+
+  const timeVal = document.createElement("span");
+  timeVal.className = "text-[9px] opacity-75 shrink-0";
+  timeVal.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  item.appendChild(meta);
+  item.appendChild(timeVal);
+  histContainer.prepend(item);
+}
+
+// --- LOOPBACK SIMULATOR "SEND TO SELF" DEBUG SUITE ---
+function toggleDebugMode(explicitFlag = null) {
+  const modal = document.getElementById("debug-modal");
+  const targetState = explicitFlag !== null ? explicitFlag : modal.classList.contains("hidden");
+  
+  if (targetState) {
+    modal.classList.remove("hidden");
+    state.debugActive = true;
+    writeToDebugLog("Virtual Sandbox Transport Loop active.", "info");
+    document.getElementById("close-debug-btn").focus();
+  } else {
+    modal.classList.add("hidden");
+    state.debugActive = false;
+  }
+}
+
+function writeToDebugLog(msg, type = "log") {
+  const term = document.getElementById("debug-terminal-logs");
+  const wrap = document.createElement("div");
+  const timeStr = new Date().toLocaleTimeString([], { hour12: false });
+  
+  if (type === "info") {
+    wrap.className = "text-yellow-400";
+  } else if (type === "error") {
+    wrap.className = "text-rose-500";
+  } else {
+    wrap.className = "text-emerald-400";
+  }
+
+  wrap.textContent = `[${timeStr}] ${msg}`;
+  term.appendChild(wrap);
+  term.scrollTop = term.scrollHeight;
+}
+
+function clearDebugConsole() {
+  document.getElementById("debug-terminal-logs").innerHTML = `<div class="text-gray-500">[System] Simulator cleared.</div>`;
+}
+
+function sendDebugPayload(senderNode, type) {
+  const partnerNode = senderNode === "A" ? "B" : "A";
+  const txtVal = document.getElementById(`debug-text-${senderNode.toLowerCase()}`).value.trim();
+
+  if (!txtVal) return;
+
+  writeToDebugLog(`Node ${senderNode} sends snippet: "${txtVal.substring(0, 20)}..."`);
+  appendChatBubble(senderNode === "A" ? "Copper Fox" : "Neon Owl", txtVal, senderNode === "A");
+  document.getElementById(`debug-text-${senderNode.toLowerCase()}`).value = "";
+}
+
+async function handleDebugFileSelection(node, event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const partnerNode = node === "A" ? "B" : "A";
+  writeToDebugLog(`Node ${node} initialized file: ${file.name} (${formatBytes(file.size)})`, "info");
+
+  const transferId = `db-${Math.random().toString(36).substr(2, 9)}`;
+  const chunkSize = getPreferredChunkSize();
+  const fileMeta = {
+    transferId: transferId,
+    name: `[Sim] ${file.name}`,
+    size: file.size,
+    type: file.type || "application/octet-stream",
+    totalChunks: Math.ceil(file.size / chunkSize),
+    chunkSize: chunkSize
+  };
+
+  renderTransferCard(transferId, node === "A" ? "SENDING" : "RECEIVING", fileMeta);
+
+  const receiverChunks = [];
+  let offset = 0;
+  let chunkIdx = 0;
+
+  const simulateStream = async () => {
+    while (offset < file.size) {
+      const slice = file.slice(offset, offset + chunkSize);
+      const buf = await slice.arrayBuffer();
+
+      await new Promise(r => setTimeout(r, 12));
+
+      receiverChunks[chunkIdx] = buf;
+      offset += chunkSize;
+      chunkIdx++;
+
+      const currentBytes = Math.min(offset, file.size);
+      updateTransferProgress(transferId, "SENDING", currentBytes, file.size);
+    }
+
+    const fileBlob = new Blob(receiverChunks, { type: fileMeta.type });
+    const objectUrl = URL.createObjectURL(fileBlob);
+    
+    const dlBtn = document.getElementById(`dl-btn-${transferId}`);
+    if (dlBtn) {
+      dlBtn.href = objectUrl;
+      dlBtn.download = fileMeta.name;
+      dlBtn.classList.remove("hidden");
+    }
+
+    updateTransferProgress(transferId, "COMPLETE", file.size, file.size);
+    writeToDebugLog("P2P stream finish. Local node virtual file available for download.", "info");
+  };
+
+  simulateStream();
+}
