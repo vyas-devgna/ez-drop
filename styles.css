@@ -252,6 +252,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
   background-color: var(--gold);
 }
 
+.known-peers-container {
+  min-height: 2rem;
+}
+
 #state-ready,
 #state-connected,
 #state-error,

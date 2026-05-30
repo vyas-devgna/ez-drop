@@ -69,6 +69,17 @@
 
   <!-- Main Viewport Router Container -->
   <main id="main-content" class="w-full max-w-6xl mx-auto px-4 py-4 flex-grow flex flex-col justify-center">
+    <section id="share-target-panel" class="hidden bg-[var(--yellow)] brutal-border p-4 brutal-shadow-sm mb-2 flex flex-col gap-2">
+      <div class="flex justify-between items-center gap-3">
+        <div>
+          <h2 class="font-mono-custom text-xs uppercase font-bold tracking-wider">Shared Items Ready</h2>
+          <p id="share-target-summary" class="text-xs font-mono-custom text-[var(--ink)] mt-1">Files shared into ez-drop are queued.</p>
+        </div>
+        <button onclick="clearQueuedShare()" class="brutal-btn-sm bg-[var(--paper)] px-3 py-1 text-xs font-mono-custom font-bold uppercase">Clear</button>
+      </div>
+      <p class="text-[10px] font-mono-custom text-[var(--ink)]">Connect to a peer below, or choose a known client, and ez-drop will send these items first.</p>
+      <div id="share-target-files" class="font-mono-custom text-[10px] flex flex-col gap-1"></div>
+    </section>
 
     <!-- STATE 1: READY / HOME SCREEN (Simplified progressive disclosure grid) -->
     <section id="state-ready" class="action-grid py-4">
@@ -140,6 +151,16 @@
           <span>Scan Partner QR</span>
         </button>
         <p class="text-[11px] font-mono-custom text-[var(--muted)] text-center">Your camera permissions are only initialized upon tapping the scan tool.</p>
+
+        <details class="bg-[var(--paper)] brutal-border p-3 cursor-pointer group">
+          <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
+            <span>Known Browser Clients</span>
+            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
+          </summary>
+          <div class="known-peers-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
+            <p class="text-center italic opacity-60">Connect once to remember a browser client here.</p>
+          </div>
+        </details>
       </div>
     </section>
 
@@ -185,6 +206,7 @@
         <div class="flex flex-col gap-6">
           <div id="drop-zone" class="bg-[var(--surface)] brutal-border p-8 brutal-shadow relative transition-colors duration-200 flex flex-col items-center justify-center text-center cursor-pointer min-h-[250px] border-dashed border-4 border-[var(--ink)]">
             <input type="file" id="file-picker" multiple class="hidden" onchange="handleFileSelection(event)">
+            <input type="file" id="folder-picker" webkitdirectory directory multiple class="hidden" onchange="handleFileSelection(event)">
             
             <div class="flex flex-col items-center justify-center gap-4">
               <div class="p-4 bg-[var(--muted-paper)] rounded-full brutal-border">
@@ -194,6 +216,7 @@
                 <h3 class="serif-display text-xl font-bold mb-1">Send Files</h3>
                 <p class="text-xs font-mono-custom text-[var(--muted)] mb-2">Drop local files here or tap to search storage.</p>
                 <p class="text-[9px] font-mono-custom text-[var(--ink)] bg-[var(--yellow)] px-2 py-0.5 inline-block brutal-border">Unlimited Sizing • Peer-to-Peer RAM Stream</p>
+                <button onclick="openFolderPicker(event)" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 mt-2 text-[10px] font-mono-custom font-bold uppercase">Choose Folder</button>
               </div>
             </div>
           </div>
@@ -255,6 +278,21 @@
             <div id="history-container" class="font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2 max-h-[150px] overflow-y-auto">
               <p class="text-center italic opacity-60">No completed items recorded in this session history.</p>
             </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="bg-[var(--surface)] brutal-border p-3 brutal-shadow-sm">
+        <details class="cursor-pointer group" open>
+          <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
+            <span class="flex items-center gap-2">
+              <i data-lucide="users" class="w-4 h-4"></i>
+              <span>Known Browser Clients</span>
+            </span>
+            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
+          </summary>
+          <div class="known-peers-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
+            <p class="text-center italic opacity-60">Connect once to remember a browser client here.</p>
           </div>
         </details>
       </div>
@@ -358,6 +396,10 @@
           <button onclick="toggleDebugMode()" id="debug-mode-btn" class="brutal-btn bg-[var(--violet)] text-black p-3 font-mono-custom uppercase text-xs font-bold tracking-wider text-left flex items-center justify-between mt-2">
             <span>Open Simulator / Debug</span>
             <i data-lucide="bug" class="w-4 h-4"></i>
+          </button>
+          <button onclick="requestNotificationAccess()" id="notification-btn" class="brutal-btn bg-[var(--surface-warm)] text-black p-3 font-mono-custom uppercase text-xs font-bold tracking-wider text-left flex items-center justify-between">
+            <span>Enable Transfer Notifications</span>
+            <i data-lucide="bell" class="w-4 h-4"></i>
           </button>
         </div>
 

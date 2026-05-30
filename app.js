@@ -7,6 +7,13 @@ const MAX_BUFFERED_AMOUNT = 1024 * 1024;
 const LOW_BUFFERED_AMOUNT = 256 * 1024;
 const LAN_MAX_BUFFERED_AMOUNT = 16 * 1024 * 1024;
 const LAN_LOW_BUFFERED_AMOUNT = 4 * 1024 * 1024;
+const DB_NAME = "ezdrop-db";
+const DB_VERSION = 1;
+const SHARE_STORE = "shared_items";
+const HISTORY_STORE = "history";
+const PEERS_STORE = "known_peers";
+const MAX_HISTORY_ITEMS = 80;
+const MAX_EAGER_CHECKSUM_SIZE = 512 * 1024 * 1024;
 const PEER_PREFIX = "ezdrop-";
 const ROOM_PREFIX = "ezdrop-room-";
 
@@ -33,6 +40,8 @@ const state = {
   incomingTransfers: new Map(), // transferId -> State Obj
   textHistory: [],
   fileHistory: [],
+  queuedShare: null,
+  knownPeers: [],
   latency: 0,
   pingIntervalId: null,
   networkPath: { mode: "unknown", detail: "Route: detecting", monitorId: null, remoteMode: "unknown" },
@@ -101,7 +110,23 @@ const manifest = {
       sizes: "512x512",
       type: "image/png"
     }
-  ]
+  ],
+  share_target: {
+    action: basePath + "share-target",
+    method: "POST",
+    enctype: "multipart/form-data",
+    params: {
+      title: "title",
+      text: "text",
+      url: "url",
+      files: [
+        {
+          name: "files",
+          accept: ["*/*"]
+        }
+      ]
+    }
+  }
 };
 const blobManifest = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
 const manifestLink = document.createElement('link');
@@ -171,9 +196,12 @@ function playSound(type) {
 }
 
 // --- LIFE CYCLE & IDENTITY MANAGEMENT ---
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   // 1. Initialize user device name details
   restoreDeviceIdentity();
+  await loadKnownPeers();
+  await hydrateShareTargetQueue();
+  await restoreHistoryRecords();
 
   // 2. Render Lucide Icons
   lucide.createIcons();
@@ -266,6 +294,67 @@ function updateDeviceName(newName) {
   }
 }
 
+async function loadKnownPeers() {
+  try {
+    state.knownPeers = (await getAllRecords(PEERS_STORE))
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+      .slice(0, 20);
+    renderKnownPeers();
+  } catch (err) {
+    debugLog("Known peer restore skipped:", err);
+  }
+}
+
+async function rememberKnownPeer(peer) {
+  if (!peer?.id) return;
+  const record = {
+    id: peer.id,
+    name: peer.name || "Unknown peer",
+    lastSeen: Date.now(),
+    route: state.networkPath.mode || "unknown"
+  };
+  state.knownPeers = [record, ...state.knownPeers.filter(item => item.id !== record.id)].slice(0, 20);
+  renderKnownPeers();
+  try {
+    await putRecord(PEERS_STORE, record);
+  } catch (err) {
+    debugLog("Known peer save skipped:", err);
+  }
+}
+
+function renderKnownPeers() {
+  const containers = document.querySelectorAll(".known-peers-container");
+  if (!containers.length) return;
+
+  if (!state.knownPeers.length) {
+    containers.forEach(container => {
+    container.innerHTML = `<p class="text-center italic opacity-60">Connect once to remember a browser client here.</p>`;
+    });
+    return;
+  }
+
+  containers.forEach(container => {
+    container.innerHTML = "";
+    state.knownPeers.forEach(peer => {
+      const item = document.createElement("button");
+      item.className = "brutal-btn-sm bg-[var(--surface-warm)] p-2 text-left font-mono-custom text-xs flex justify-between items-center gap-2";
+      item.onclick = () => connectToKnownPeer(peer.id);
+      const lastSeen = new Date(peer.lastSeen).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      item.innerHTML = `<span><strong>${escapeHtml(peer.name)}</strong><br><span class="text-[9px] text-[var(--muted)]">${escapeHtml(peer.route || "unknown")} • ${lastSeen}</span></span><span class="text-[9px] uppercase">Connect</span>`;
+      container.appendChild(item);
+    });
+  });
+}
+
+function connectToKnownPeer(peerId) {
+  if (!peerId || !state.peer) {
+    showGlobalAlert("Known peer is not available yet. Create a room first.", "error");
+    return;
+  }
+  renderAppByState("CONNECTING", "Calling remembered browser client...");
+  initiateDirectHandshake(peerId);
+}
+
 function regenerateIdentityName() {
   const idx = Math.floor(Math.random() * ANIMAL_NAMES.length);
   updateDeviceName(ANIMAL_NAMES[idx]);
@@ -301,6 +390,112 @@ function safeStorageSet(key, value) {
   }
 }
 
+async function hydrateShareTargetQueue() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("share-error") === "1") {
+    showGlobalAlert("The OS share payload could not be imported. Try selecting fewer or smaller files.", "error");
+    history.replaceState(null, "", window.location.pathname);
+    return;
+  }
+  const shareId = params.get("shared");
+  if (!shareId) {
+    renderQueuedShare();
+    return;
+  }
+
+  try {
+    const record = await getRecord(SHARE_STORE, shareId);
+    if (record) {
+      state.queuedShare = record;
+      renderQueuedShare();
+      showGlobalAlert("Shared items are queued. Choose or connect to a device to send them.", "info");
+      history.replaceState(null, "", window.location.pathname);
+    }
+  } catch (err) {
+    console.error("Unable to restore shared items:", err);
+    showGlobalAlert("Could not load the shared items from the OS share sheet.", "error");
+  }
+}
+
+async function restoreHistoryRecords() {
+  try {
+    const records = (await getAllRecords(HISTORY_STORE)).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_HISTORY_ITEMS);
+    const histContainer = document.getElementById("history-container");
+    if (!histContainer || records.length === 0) return;
+    histContainer.innerHTML = "";
+    records.reverse().forEach(record => renderHistoryRecord(record, { prepend: true, persist: false }));
+  } catch (err) {
+    debugLog("History restore skipped:", err);
+  }
+}
+
+function renderQueuedShare() {
+  const panel = document.getElementById("share-target-panel");
+  const summary = document.getElementById("share-target-summary");
+  const fileList = document.getElementById("share-target-files");
+  if (!panel || !summary || !fileList) return;
+
+  if (!state.queuedShare) {
+    panel.classList.add("hidden");
+    fileList.innerHTML = "";
+    return;
+  }
+
+  const files = state.queuedShare.files || [];
+  const textParts = [state.queuedShare.title, state.queuedShare.text, state.queuedShare.url].filter(Boolean);
+  const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
+  summary.textContent = `${files.length} file${files.length === 1 ? "" : "s"}${totalBytes ? ` (${formatBytes(totalBytes)})` : ""}${textParts.length ? " plus text/link" : ""}`;
+  fileList.innerHTML = "";
+  files.slice(0, 5).forEach(file => {
+    const row = document.createElement("div");
+    row.className = "flex justify-between gap-2";
+    row.innerHTML = `<span class="truncate">${escapeHtml(file.name)}</span><span>${formatBytes(file.size || 0)}</span>`;
+    fileList.appendChild(row);
+  });
+  if (files.length > 5) {
+    const more = document.createElement("div");
+    more.textContent = `+${files.length - 5} more file(s)`;
+    fileList.appendChild(more);
+  }
+  panel.classList.remove("hidden");
+}
+
+async function clearQueuedShare() {
+  const id = state.queuedShare?.id;
+  state.queuedShare = null;
+  renderQueuedShare();
+  if (id) {
+    try {
+      await deleteRecord(SHARE_STORE, id);
+    } catch (err) {
+      debugLog("Queued share delete skipped:", err);
+    }
+  }
+}
+
+async function sendQueuedShareToCurrentPeer() {
+  if (!state.queuedShare || !state.conn || state.connectionState !== "CONNECTED") return;
+  const queued = state.queuedShare;
+  const textParts = [queued.title, queued.text, queued.url].filter(Boolean);
+
+  if (textParts.length) {
+    const text = textParts.join("\n");
+    state.conn.send({
+      type: "text",
+      from: state.identity.name,
+      payload: { text }
+    });
+    appendChatBubble(state.identity.name, text, true);
+    addHistoryRecord("shared-text", `Shared text/link (${text.substring(0, 30)}...)`, true);
+  }
+
+  for (const file of queued.files || []) {
+    await initiateOutgoingFileTransfer(file);
+  }
+
+  await clearQueuedShare();
+}
+
 function nextFrame() {
   return new Promise(resolve => requestAnimationFrame(() => resolve()));
 }
@@ -309,8 +504,66 @@ function isMobileDevice() {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches;
 }
 
+function openEzDropDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(SHARE_STORE)) {
+        db.createObjectStore(SHARE_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(HISTORY_STORE)) {
+        db.createObjectStore(HISTORY_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(PEERS_STORE)) {
+        db.createObjectStore(PEERS_STORE, { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function dbRequest(storeName, mode, operation) {
+  const db = await openEzDropDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, mode);
+    const store = tx.objectStore(storeName);
+    const request = operation(store);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+function putRecord(storeName, value) {
+  return dbRequest(storeName, "readwrite", store => store.put(value));
+}
+
+function getRecord(storeName, id) {
+  return dbRequest(storeName, "readonly", store => store.get(id));
+}
+
+function deleteRecord(storeName, id) {
+  return dbRequest(storeName, "readwrite", store => store.delete(id));
+}
+
+async function getAllRecords(storeName) {
+  return dbRequest(storeName, "readonly", store => store.getAll());
+}
+
 function getPreferredChunkSize() {
   return state.networkPath.mode === "lan" ? LAN_CHUNK_SIZE : CHUNK_SIZE;
+}
+
+async function computeBlobSha256(blob) {
+  const buffer = await blob.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(hashBuffer)).map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function getMaxBufferedAmount() {
@@ -450,6 +703,35 @@ function setupMobileLifecycleHooks() {
   window.addEventListener("pagehide", () => {
     releaseTransferWakeLock();
   });
+}
+
+async function requestNotificationAccess() {
+  if (!("Notification" in window)) {
+    showGlobalAlert("Notifications are not available in this browser.", "error");
+    return;
+  }
+
+  const result = await Notification.requestPermission();
+  showGlobalAlert(result === "granted" ? "Transfer notifications enabled." : "Notifications were not enabled.", result === "granted" ? "info" : "error");
+}
+
+async function notifyUser(title, body) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const reg = await navigator.serviceWorker?.ready;
+    if (reg?.showNotification) {
+      await reg.showNotification(title, {
+        body,
+        icon: "assets/logo.png",
+        badge: "assets/logo.png",
+        tag: "ez-drop-transfer"
+      });
+    } else {
+      new Notification(title, { body, icon: "assets/logo.png" });
+    }
+  } catch (err) {
+    debugLog("Notification skipped:", err);
+  }
 }
 
 // --- SLIDEOVER SIDE MENU CONTROLS ---
@@ -943,6 +1225,10 @@ function markConnectionReady(connInstance, peerName) {
   playSound("connect");
   initiatePingLoop();
   startNetworkPathMonitoring(connInstance);
+  rememberKnownPeer(state.connectedPeer);
+  setTimeout(() => {
+    sendQueuedShareToCurrentPeer();
+  }, 250);
 }
 
 function waitForRouteClassification(timeoutMs = 2500) {
@@ -1005,6 +1291,7 @@ function processIncomingMessage(msg, connInstance) {
       document.getElementById("invite-modal").classList.remove("hidden");
       document.getElementById("accept-invite-btn").focus();
       playSound("connect");
+      notifyUser("ez-drop connection request", `${msg.from || "A peer"} wants to connect.`);
       break;
 
     case "accept":
@@ -1043,6 +1330,14 @@ function processIncomingMessage(msg, connInstance) {
 
     case "file-meta":
       handleFileMetadata(msg.payload);
+      break;
+
+    case "file-offer":
+      handleFileOffer(msg.payload, connInstance);
+      break;
+
+    case "file-accept":
+      handleFileOfferAccepted(msg.payload.transferId);
       break;
 
     case "file-chunk":
@@ -1328,6 +1623,13 @@ function setupDragAndDrop() {
 function handleFileSelection(event) {
   const files = event.target.files;
   handleFilesArray(files);
+  event.target.value = "";
+}
+
+function openFolderPicker(event) {
+  event?.stopPropagation();
+  const picker = document.getElementById("folder-picker");
+  if (picker) picker.click();
 }
 
 function handleFilesArray(files) {
@@ -1371,38 +1673,74 @@ async function initiateOutgoingFileTransfer(file) {
   await waitForRouteClassification();
   const transferId = `tx-${Math.random().toString(36).substr(2, 9)}`;
   const chunkSize = getPreferredChunkSize();
+  let checksum = "";
+  if (file.size <= MAX_EAGER_CHECKSUM_SIZE && crypto?.subtle) {
+    try {
+      checksum = await computeBlobSha256(file);
+    } catch (err) {
+      debugLog("Checksum skipped:", err);
+    }
+  }
   
   const fileMeta = {
     transferId: transferId,
     name: file.name,
+    path: file.webkitRelativePath || file.name,
     size: file.size,
     type: file.type || "application/octet-stream",
     totalChunks: Math.ceil(file.size / chunkSize),
-    chunkSize: chunkSize
+    chunkSize: chunkSize,
+    sha256: checksum
   };
 
   state.outgoingTransfers.set(transferId, {
     file: file,
     meta: fileMeta,
     sentBytes: 0,
-    status: "QUEUED",
+    status: "WAITING_ACCEPT",
     startTime: Date.now()
   });
 
   renderTransferCard(transferId, "SENDING", fileMeta);
 
   state.conn.send({
-    type: "file-meta",
+    type: "file-offer",
     from: state.identity.name,
     payload: fileMeta
   });
 
   try {
+    await waitForFileOfferAccepted(transferId);
+    state.conn.send({
+      type: "file-meta",
+      from: state.identity.name,
+      payload: fileMeta
+    });
     await runAdaptiveBackpressureStream(transferId);
   } catch (err) {
     console.error("Transmitter crashed:", err);
     handleTransferError(transferId, "Streaming connection interrupted", true);
   }
+}
+
+function waitForFileOfferAccepted(transferId) {
+  const transferObj = state.outgoingTransfers.get(transferId);
+  if (!transferObj) return Promise.reject(new Error("Missing transfer"));
+
+  const speedEl = document.getElementById(`speed-${transferId}`);
+  if (speedEl) speedEl.textContent = "Waiting for accept";
+
+  return new Promise((resolve, reject) => {
+    transferObj.acceptResolve = resolve;
+    transferObj.acceptReject = reject;
+  });
+}
+
+function handleFileOfferAccepted(transferId) {
+  const transferObj = state.outgoingTransfers.get(transferId);
+  if (!transferObj || transferObj.status === "CANCELLED") return;
+  transferObj.status = "QUEUED";
+  if (transferObj.acceptResolve) transferObj.acceptResolve();
 }
 
 async function runAdaptiveBackpressureStream(transferId) {
@@ -1508,6 +1846,44 @@ function waitForDataChannelDrain(dc) {
 }
 
 // --- RECIPIENT FILE HANDLING ---
+function handleFileOffer(meta, connInstance) {
+  document.getElementById("queue-empty-state").classList.add("hidden");
+  const container = document.getElementById("transfers-container");
+  const card = document.createElement("div");
+  card.id = `card-${meta.transferId}`;
+  card.className = "brutal-border p-3 bg-[var(--surface-warm)] brutal-shadow-sm flex flex-col gap-2 relative";
+
+  const pathText = meta.path && meta.path !== meta.name ? ` • ${meta.path}` : "";
+  card.innerHTML = `
+    <div class="flex justify-between items-start gap-2 border-b border-[var(--ink)] pb-1">
+      <div class="min-w-0 flex-grow">
+        <h4 class="font-bold text-xs truncate uppercase font-mono-custom">${escapeHtml(meta.name)}</h4>
+        <div class="text-[9px] font-mono-custom text-[var(--muted)]">${formatBytes(meta.size)}${pathText ? ` • ${escapeHtml(pathText.slice(3))}` : ""}</div>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button id="decline-btn-${meta.transferId}" class="brutal-btn-sm bg-[var(--paper)] px-2 py-0.5 text-[9px] font-mono-custom font-bold uppercase text-[var(--red)]">Decline</button>
+        <button id="accept-file-btn-${meta.transferId}" class="brutal-btn-sm bg-[var(--ink)] px-2 py-0.5 text-[9px] font-mono-custom font-bold uppercase text-[var(--paper)]">Accept</button>
+      </div>
+    </div>
+    <div class="text-[10px] font-mono-custom text-[var(--muted)]">Incoming file request. Accept to start the transfer and download/save when complete.</div>
+  `;
+  container.prepend(card);
+
+  document.getElementById(`accept-file-btn-${meta.transferId}`).onclick = () => {
+    card.remove();
+    handleFileMetadata(meta);
+    connInstance.send({ type: "file-accept", payload: { transferId: meta.transferId } });
+  };
+
+  document.getElementById(`decline-btn-${meta.transferId}`).onclick = () => {
+    handleTransferCancellation(meta.transferId, false);
+    connInstance.send({ type: "file-cancel", payload: { transferId: meta.transferId } });
+    card.remove();
+  };
+
+  notifyUser("ez-drop file request", `${meta.name} (${formatBytes(meta.size)}) is waiting for approval.`);
+}
+
 function handleFileMetadata(meta) {
   if (meta.size > 800 * 1024 * 1024) {
     showGlobalAlert(`Large file incoming (${(meta.size / (1024*1024)).toFixed(0)}MB). Keep browser in foreground.`, "info");
@@ -1549,13 +1925,16 @@ function finalizeIncomingFile(transferId) {
 
   try {
     const fileBlob = new Blob(incoming.chunks, { type: incoming.meta.type });
+    incoming.blob = fileBlob;
     const objectUrl = URL.createObjectURL(fileBlob);
+    incoming.objectUrl = objectUrl;
     
     const downloadBtn = document.getElementById(`dl-btn-${transferId}`);
     if (downloadBtn) {
       downloadBtn.href = objectUrl;
       downloadBtn.download = incoming.meta.name;
       downloadBtn.rel = "noopener";
+      downloadBtn.onclick = (event) => saveReceivedFile(event, transferId);
       downloadBtn.classList.remove("hidden");
     }
 
@@ -1570,12 +1949,51 @@ function finalizeIncomingFile(transferId) {
       anchor.click();
       document.body.removeChild(anchor);
     }
+    notifyUser("ez-drop file received", `${incoming.meta.name} is ready to save.`);
+
+    if (incoming.meta.sha256 && crypto?.subtle) {
+      computeBlobSha256(fileBlob).then(hash => {
+        const speedEl = document.getElementById(`speed-${transferId}`);
+        if (speedEl) {
+          speedEl.textContent = hash === incoming.meta.sha256 ? "Verified" : "Checksum mismatch";
+        }
+        if (hash !== incoming.meta.sha256) {
+          showGlobalAlert(`Checksum mismatch for ${incoming.meta.name}. Ask the sender to retry.`, "error");
+        }
+      }).catch(err => debugLog("Checksum verification skipped:", err));
+    }
 
     releaseTransferWakeLock();
 
   } catch (err) {
     console.error("Blob compilation crashed", err);
     handleTransferError(transferId, "Blob parsing failure", false);
+  }
+}
+
+async function saveReceivedFile(event, transferId) {
+  const incoming = state.incomingTransfers.get(transferId);
+  if (!incoming?.blob || !window.showSaveFilePicker) return;
+  event.preventDefault();
+
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: incoming.meta.name,
+      types: [
+        {
+          description: incoming.meta.type || "Downloaded file",
+          accept: { [incoming.meta.type || "application/octet-stream"]: [`.${incoming.meta.name.split(".").pop() || "download"}`] }
+        }
+      ]
+    });
+    const writable = await handle.createWritable();
+    await writable.write(incoming.blob);
+    await writable.close();
+    showGlobalAlert(`Saved ${incoming.meta.name}`, "info");
+  } catch (err) {
+    if (err?.name !== "AbortError") {
+      showGlobalAlert(`Could not save ${incoming.meta.name}. Use the browser download button instead.`, "error");
+    }
   }
 }
 
@@ -1730,6 +2148,9 @@ function handleTransferCancellation(transferId, initiatedLocally) {
       payload: { transferId: transferId }
     });
   }
+  if (outgoing?.acceptReject) {
+    outgoing.acceptReject(new Error("Transfer cancelled"));
+  }
   releaseTransferWakeLock();
 }
 
@@ -1763,7 +2184,19 @@ function clearSessionLogs() {
 
 // --- SIMPLE SESSION HISTORY ---
 function addHistoryRecord(type, description, isMe) {
+  const record = {
+    id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    description,
+    isMe,
+    createdAt: Date.now()
+  };
+  renderHistoryRecord(record, { persist: true });
+}
+
+function renderHistoryRecord(record, options = {}) {
   const histContainer = document.getElementById("history-container");
+  if (!histContainer) return;
   // Remove placeholder empty text
   if (histContainer.querySelector("p.italic")) {
     histContainer.innerHTML = "";
@@ -1774,15 +2207,26 @@ function addHistoryRecord(type, description, isMe) {
   
   const meta = document.createElement("span");
   meta.className = "truncate mr-2";
-  meta.innerHTML = `<strong class="uppercase text-[9px] px-1 bg-[var(--muted-paper)] mr-1">${type}</strong> ${escapeHtml(description)}`;
+  meta.innerHTML = `<strong class="uppercase text-[9px] px-1 bg-[var(--muted-paper)] mr-1">${escapeHtml(record.type)}</strong> ${escapeHtml(record.description)}`;
 
   const timeVal = document.createElement("span");
   timeVal.className = "text-[9px] opacity-75 shrink-0";
-  timeVal.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  timeVal.textContent = new Date(record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   item.appendChild(meta);
   item.appendChild(timeVal);
   histContainer.prepend(item);
+
+  if (options.persist) {
+    putRecord(HISTORY_STORE, record)
+      .then(pruneHistoryRecords)
+      .catch(err => debugLog("History save skipped:", err));
+  }
+}
+
+async function pruneHistoryRecords() {
+  const records = (await getAllRecords(HISTORY_STORE)).sort((a, b) => b.createdAt - a.createdAt);
+  await Promise.all(records.slice(MAX_HISTORY_ITEMS).map(record => deleteRecord(HISTORY_STORE, record.id)));
 }
 
 // --- LOOPBACK SIMULATOR "SEND TO SELF" DEBUG SUITE ---
@@ -1846,6 +2290,7 @@ async function handleDebugFileSelection(node, event) {
   const fileMeta = {
     transferId: transferId,
     name: `[Sim] ${file.name}`,
+    path: file.webkitRelativePath || file.name,
     size: file.size,
     type: file.type || "application/octet-stream",
     totalChunks: Math.ceil(file.size / chunkSize),

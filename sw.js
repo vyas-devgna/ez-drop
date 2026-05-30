@@ -1,5 +1,8 @@
 const CACHE_NAME = 'ez-drop-cache-v1.5'; // Bumped cache to force-evict stale app-shell assets
 const DEBUG_LOGS = false;
+const DB_NAME = 'ezdrop-db';
+const DB_VERSION = 1;
+const SHARE_STORE = 'shared_items';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -7,6 +10,57 @@ const PRECACHE_ASSETS = [
   './app.js',
   './assets/logo.png'
 ];
+
+function openEzDropDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(SHARE_STORE)) {
+        db.createObjectStore(SHARE_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('history')) {
+        db.createObjectStore('history', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('known_peers')) {
+        db.createObjectStore('known_peers', { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function storeSharedPayload(request) {
+  const formData = await request.formData();
+  const id = `share-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const files = [];
+
+  for (const value of formData.values()) {
+    if (value instanceof File && value.size > 0) {
+      files.push(value);
+    }
+  }
+
+  const record = {
+    id,
+    createdAt: Date.now(),
+    title: formData.get('title') || '',
+    text: formData.get('text') || '',
+    url: formData.get('url') || '',
+    files
+  };
+
+  const db = await openEzDropDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(SHARE_STORE, 'readwrite');
+    tx.objectStore(SHARE_STORE).put(record);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+  return id;
+}
 
 // Offline fallback for critical CDN dependencies
 const CDN_ASSETS = [
@@ -54,9 +108,23 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+
+  if (event.request.method === 'POST' && url.origin === self.location.origin && url.pathname.endsWith('/share-target')) {
+    event.respondWith((async () => {
+      try {
+        const id = await storeSharedPayload(event.request);
+        return Response.redirect(`./?shared=${encodeURIComponent(id)}`, 303);
+      } catch (err) {
+        console.error('[sw.js] Share target ingest failed:', err);
+        return Response.redirect('./?share-error=1', 303);
+      }
+    })());
+    return;
+  }
+
   if (event.request.method !== 'GET') return;
 
-  const url = new URL(event.request.url);
   if (!['http:', 'https:'].includes(url.protocol)) return;
 
   // CRITICAL FIX: Explicitly bypass Service Worker for PeerJS signaling server traffic!
@@ -101,4 +169,16 @@ self.addEventListener('fetch', event => {
         })
     );
   }
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      if (clientList.length > 0) {
+        return clientList[0].focus();
+      }
+      return clients.openWindow('./');
+    })
+  );
 });
