@@ -228,5 +228,3 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md), [CODE
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-```
