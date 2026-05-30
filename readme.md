@@ -1,293 +1,147 @@
-# ez-drop ⚡
+# ez-drop
 
-**Zero-cost · Serverless · Peer-to-peer file transfer**
+**Serverless peer-to-peer file and text transfer for the browser.**
 
-ez-drop is a lightweight browser-to-browser file and text sharing app built for static hosting. It runs on GitHub Pages, uses WebRTC for direct peer-to-peer transfer, and avoids backend storage entirely.
+ez-drop is an installable static web app for quick browser-to-browser sharing. It uses PeerJS for rendezvous/signaling, WebRTC DataChannels for encrypted peer transfer, and a service worker for the offline app shell. There is no app server, upload bucket, account system, or database behind it.
 
-> Direct transfer. No login. No database. No upload server.
+> Open the app on two devices, connect with a room code or QR code, approve the request, and send files or text directly between browsers.
 
----
+## Highlights
 
-## Field Notes
+- **Serverless static app**: deploys cleanly to GitHub Pages or any static host.
+- **WebRTC P2P transfer**: files and text move over encrypted browser DataChannels.
+- **Room code, link, and QR pairing**: fast pairing without accounts.
+- **PWA install support**: offline app shell, app icons, and manifest wiring.
+- **Web Share Target support**: supported installed Chromium PWAs can receive shared files/text from the OS share sheet.
+- **File offers before transfer**: receivers see file details and accept before bytes are sent.
+- **Mobile-first UI**: safe-area support, numeric room-code keyboard, large tap targets, and mobile download fallbacks.
+- **LAN route detection**: WebRTC candidate inspection labels LAN/direct/relay routes and enables a faster LAN profile when possible.
+- **Folder and multi-file sending**: supports multiple files and Chromium folder selection.
+- **Checksums**: SHA-256 verification for eligible transfers.
+- **History and known clients**: IndexedDB-backed local transfer history and remembered browser peers.
 
-| Item           | Details                                        |
-| -------------- | ---------------------------------------------- |
-| Project        | ez-drop                                        |
-| Type           | Static P2P Web App                             |
-| Deployment     | GitHub Pages                                   |
-| Runtime        | Browser only                                   |
-| Backend        | None                                           |
-| Transfer Layer | WebRTC DataChannel                             |
-| Signaling      | PeerJS                                         |
-| License        | MIT                                            |
-| Creator        | [@vyas-devgna](https://github.com/vyas-devgna) |
-
----
-
-## What ez-drop Does
-
-ez-drop lets two browsers connect using a short room code, direct link, or QR code. Once connected, both users can send files and text directly to each other.
-
-The app is designed for simple local sharing between devices without creating accounts, uploading files to a server, or maintaining backend infrastructure.
-
----
-
-## Core Features
-
-* **5-digit room code pairing**
-* **Direct share link support**
-* **QR code based joining**
-* **Peer-to-peer WebRTC transfer**
-* **File drag-and-drop**
-* **Multiple file transfer**
-* **Clipboard/text transfer**
-* **Session transfer history**
-* **Installable PWA support**
-* **Offline app shell through service worker**
-* **Mobile-first responsive UI**
-* **No backend or paid deployment required**
-
----
-
-## Visual Identity
-
-ez-drop uses an **Editorial Brutalist Sketchbook** design system.
-
-The interface avoids generic SaaS styling and uses:
-
-* Warm paper-like backgrounds
-* Strong black borders
-* Tactile buttons
-* Hard offset shadows
-* Editorial metadata labels
-* Minimal sketchbook-style accents
-* Clean, mobile-first layouts
-
-The goal is to make the app feel simple, fast, trustworthy, and visually memorable without making the interface bloated.
-
----
-
-## How It Works
+## Live Architecture
 
 ```mermaid
 flowchart LR
-    A[Browser Client A] -->|Room Code / PeerJS Signaling| S[PeerJS Signaling]
-    B[Browser Client B] -->|Room Code / PeerJS Signaling| S
-    A <-->|Encrypted WebRTC DataChannel| B
+    A[Browser A] -->|room code / PeerJS signaling| S[PeerJS signaling]
+    B[Browser B] -->|room code / PeerJS signaling| S
+    A <-->|encrypted WebRTC DataChannel| B
+    A -.->|service worker app shell| C[(Cache Storage)]
+    A -.->|history / shared payload queue| D[(IndexedDB)]
 ```
 
-PeerJS is used only to help the browsers discover and connect to each other. After the WebRTC DataChannel is open, file chunks and text messages move directly between browsers.
+PeerJS helps browsers find each other. File contents are not uploaded to an ez-drop backend. Once the DataChannel is open, transfer messages move directly between the connected browsers whenever the network allows it.
 
-No file is intentionally stored on an application server.
+## What It Can And Cannot Do
 
----
+ez-drop is intentionally a **serverless browser app**, so it follows browser security boundaries.
 
-## Transfer Flow
+It can:
 
-```mermaid
-sequenceDiagram
-    participant A as Browser A
-    participant P as PeerJS Signaling
-    participant B as Browser B
+- Use WebRTC direct/LAN/relay-selected paths.
+- Receive OS share-sheet payloads where Web Share Target is supported.
+- Use File System Access APIs on supported Chromium desktop browsers.
+- Cache the app shell for offline loading.
+- Transfer files while the page/PWA is open and active.
 
-    A->>P: Create room peer ID
-    B->>P: Connect using room code
-    P-->>A: Incoming connection
-    A-->>B: Accept connection
-    A<<->>B: WebRTC DataChannel opens
-    A->>B: file-meta
-    A->>B: file-chunk 1
-    A->>B: file-chunk 2
-    A->>B: file-complete
-    B->>B: Reassemble Blob and download
+It cannot:
+
+- Open raw TCP sockets.
+- Run a LAN HTTP server from the browser.
+- Send or receive UDP multicast/broadcast packets.
+- Guarantee always-on background receiving while the app is closed.
+- Fully implement native LocalSend discovery/protocol without a native helper.
+
+## Transfer Protocol
+
+ez-drop uses structured DataChannel messages:
+
+- `hello`, `accept`, `decline`: connection handshake.
+- `route-info`: LAN/direct/relay route reporting.
+- `file-offer`: receiver-facing file request metadata.
+- `file-accept`: approval to start bytes.
+- `file-meta`: transfer metadata including chunk size and optional SHA-256.
+- `file-chunk`: binary ArrayBuffer chunks.
+- `file-complete`: finalization signal.
+- `file-cancel`, `file-error`: control and recovery messages.
+- `text`: text/link snippets.
+
+Default chunking:
+
+- Standard route: `64 KB`
+- LAN fast profile: `256 KB`
+
+## Browser Support
+
+Core requirements:
+
+- WebRTC DataChannel
+- Service Worker
+- Cache Storage
+- IndexedDB
+- File API
+
+Enhanced features are browser-dependent:
+
+- Web Share Target: mostly installed Chromium PWAs.
+- File System Access save/folder APIs: Chromium-family browsers, strongest on desktop.
+- Screen Wake Lock: supported browsers only, while visible/active.
+- Camera QR scanning: requires camera permission and a compatible device.
+
+## Local Development
+
+No build step is required.
+
+```bash
+python3 -m http.server 4173
 ```
 
----
-
-## Adaptive Transmission Protocol
-
-Files are split into small binary chunks before transfer. The receiver reassembles the chunks into a Blob and triggers a download when the transfer is complete.
-
-Default chunk size:
+Then open:
 
 ```text
-64 KB
+http://127.0.0.1:4173/
 ```
 
----
+Useful checks:
 
-## Protocol Messages
-
-ez-drop uses small structured messages over the WebRTC DataChannel.
-
-### 1. File Metadata
-
-```json
-{
-  "type": "file-meta",
-  "from": "Paper Tiger",
-  "payload": {
-    "transferId": "tx-98asd2f3a",
-    "name": "archive.zip",
-    "size": 154857600,
-    "type": "application/zip",
-    "totalChunks": 2363
-  }
-}
+```bash
+node --check app.js
+node --check sw.js
 ```
 
-### 2. File Chunk
+## Deployment
 
-```json
-{
-  "type": "file-chunk",
-  "payload": {
-    "transferId": "tx-98asd2f3a",
-    "chunkIndex": 412,
-    "data": "[ArrayBuffer Slice]"
-  }
-}
-```
+Deploy the repository as static files. For GitHub Pages:
 
-### 3. File Complete
-
-```json
-{
-  "type": "file-complete",
-  "payload": {
-    "transferId": "tx-98asd2f3a"
-  }
-}
-```
-
----
-
-## Security & Privacy
-
-ez-drop is designed around local-first, peer-to-peer transfer.
-
-* **No login required**
-* **No database**
-* **No file upload server**
-* **No account storage**
-* **No cloud file hosting**
-* **WebRTC DataChannels are encrypted in transit**
-* **Files are transferred directly between connected browsers**
-* **Received files may exist in browser memory until downloaded, cleared, or the page is closed**
-
-Optional passphrase-based pairing can be used as an extra access check, but WebRTC encryption is still handled by the browser.
-
----
-
-## Static Deployment
-
-ez-drop is designed to run as a static GitHub Pages project.
-
-Recommended structure:
-
-```text
-.
-├── index.html
-├── sw.js
-├── manifest.webmanifest
-└── assets/
-    └── logo.png
-```
-
----
-
-## GitHub Pages Deployment
-
-1. Push the project to GitHub.
-2. Open the repository settings.
+1. Push to GitHub.
+2. Open repository **Settings**.
 3. Go to **Pages**.
-4. Select the branch and folder used for deployment.
-5. Save the settings.
-6. Open the generated GitHub Pages URL.
+4. Select the branch/folder.
+5. Save and open the Pages URL.
 
-Example URL:
+The app expects these static assets:
 
 ```text
-https://yourname.github.io/ez-drop/
+index.html
+app.js
+styles.css
+sw.js
+assets/logo.png
 ```
 
----
+## Privacy
 
-## PWA Support
+- ez-drop does not require accounts.
+- ez-drop does not provide a file upload server.
+- Transfer history and queued share payloads are stored locally in the browser via IndexedDB.
+- Files may exist temporarily in browser memory and object URLs until saved, cleared, or the page is closed.
+- Signaling metadata necessarily touches the configured PeerJS signaling service so browsers can establish a connection.
 
-ez-drop can be installed as a web app when the browser supports PWA installation.
+## Contributing
 
-Required files:
-
-* `index.html`
-* `manifest.webmanifest`
-* `sw.js`
-
-The service worker caches the app shell so the interface can load again even when offline.
-
-> Peer-to-peer transfer still requires network availability and browser WebRTC support.
-
----
-
-## Browser Support Notes
-
-ez-drop depends on modern browser APIs:
-
-* WebRTC
-* DataChannel
-* File API
-* Clipboard API, where available
-* Camera API for QR scanning, where available
-* Service Worker for offline shell caching
-* Web App Manifest for installation
-
-Some restricted school, office, or mobile networks may block WebRTC traffic. In that case, switching networks or using a hotspot may help.
-
----
-
-## Design Goals
-
-ez-drop is built to be:
-
-* Simple enough for non-technical users
-* Fast enough for local sharing
-* Free to deploy
-* Easy to maintain
-* Mobile-friendly
-* Installable
-* Private by default
-* Useful without accounts or servers
-
----
-
-## Limitations
-
-Because ez-drop has no backend and no paid TURN server, some edge cases may fail depending on network conditions.
-
-Known limitations:
-
-* WebRTC may fail on strict NAT or blocked networks.
-* Very large files may use significant browser memory.
-* Auto-download behavior depends on browser permissions.
-* iOS browser support may be more limited.
-* The public PeerJS signaling service availability is external to this app.
-
-The app should always show a clear fallback or recovery message instead of silently failing.
-
----
-
-## Repository
-
-[vyas-devgna / ez-drop](https://github.com/vyas-devgna/ez-drop)
-
----
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md) before opening issues or pull requests.
 
 ## License
 
-This project is released under the **MIT License**.
-
----
-
-## Author
-
-Built by [Devgna Vyas](https://github.com/vyas-devgna).
+MIT. See [LICENSE](LICENSE).

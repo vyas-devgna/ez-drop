@@ -1,0 +1,24 @@
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs and temporary output
+*.log
+tmp/
+temp/
+.cache/
+
+# Dependency/build folders if tooling is added later
+node_modules/
+dist/
+build/
+coverage/
+
+# Local environment files
+.env
+.env.*
+
+# Local Codex/GitHub helper skills, not repository metadata
+.github/skills/
