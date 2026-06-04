@@ -26,6 +26,22 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="min-h-screen flex flex-col relative antialiased pb-safe">
+  <!-- First-visit welcome overlay -->
+  <div id="ez-drop-welcome" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="ez-drop-welcome-title">
+    <div class="w-full max-w-md bg-[var(--paper)] brutal-border brutal-shadow-lg p-6 flex flex-col gap-4 relative">
+      <h2 id="ez-drop-welcome-title" class="serif-display text-2xl font-bold">ez-drop</h2>
+      <p class="text-sm font-mono-custom text-[var(--muted)]">Send files and text directly between browsers — no server storage, no account.</p>
+      <ul class="text-xs font-mono-custom flex flex-col gap-2 list-disc pl-5 text-[var(--ink)]">
+        <li>5-digit room codes and QR pairing</li>
+        <li>Peer-to-peer transfer via WebRTC</li>
+        <li>Installable PWA — works offline-ready</li>
+      </ul>
+      <button type="button" id="ez-drop-welcome-dismiss" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] p-4 font-mono-custom uppercase font-bold text-sm tracking-wide w-full">
+        Launch ez-drop →
+      </button>
+    </div>
+  </div>
+
   <a href="#main-content" class="skip-link font-mono-custom brutal-border brutal-shadow-sm">Skip to main content</a>
 
   <!-- ARIA Live region for state changes -->
@@ -578,5 +594,23 @@
 
   <!-- APPLICATION CORE ARCHITECTURE -->
   <script defer src="app.js"></script>
+  <script>
+    (function () {
+      var key = 'ez-drop-welcomed';
+      var overlay = document.getElementById('ez-drop-welcome');
+      var btn = document.getElementById('ez-drop-welcome-dismiss');
+      if (!overlay || !btn) return;
+      try {
+        if (localStorage.getItem(key)) return;
+      } catch (_) {}
+      overlay.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      btn.addEventListener('click', function () {
+        try { localStorage.setItem(key, '1'); } catch (_) {}
+        overlay.classList.add('hidden');
+        document.body.style.overflow = '';
+      });
+    })();
+  </script>
 </body>
 </html>
