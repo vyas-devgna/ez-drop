@@ -1264,7 +1264,6 @@ function markConnectionReady(connInstance, peerName) {
   playSound("connect");
   initiatePingLoop();
   startNetworkPathMonitoring(connInstance);
-  rememberKnownPeer(state.connectedPeer);
   setTimeout(() => {
     sendQueuedShareToCurrentPeer();
   }, 250);
