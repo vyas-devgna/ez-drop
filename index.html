@@ -23,6 +23,7 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script defer src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
   <script defer src="https://unpkg.com/lucide@latest"></script>
+  <script defer src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="min-h-screen flex flex-col relative antialiased pb-safe">
@@ -152,13 +153,19 @@
         </button>
         <p class="text-[11px] font-mono-custom text-[var(--muted)] text-center">Your camera permissions are only initialized upon tapping the scan tool.</p>
 
-        <details class="bg-[var(--paper)] brutal-border p-3 cursor-pointer group">
+        <details class="bg-[var(--paper)] brutal-border p-3 cursor-pointer group" open>
           <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
-            <span>Known Browser Clients</span>
+            <span class="flex items-center gap-2">
+              <i data-lucide="wifi" class="w-4 h-4"></i>
+              <span>Nearby Devices</span>
+            </span>
             <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
           </summary>
-          <div class="known-peers-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
-            <p class="text-center italic opacity-60">Connect once to remember a browser client here.</p>
+          <div id="nearby-devices-list-1" class="nearby-devices-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
+            <div class="flex items-center justify-center gap-2 py-2">
+              <div class="w-4 h-4 rounded-full border-2 border-[var(--ink)] border-t-transparent animate-spin"></div>
+              <span>Scanning local network...</span>
+            </div>
           </div>
         </details>
       </div>
@@ -283,16 +290,19 @@
       </div>
 
       <div class="bg-[var(--surface)] brutal-border p-3 brutal-shadow-sm">
-        <details class="cursor-pointer group" open>
+        <details class="cursor-pointer group">
           <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
             <span class="flex items-center gap-2">
-              <i data-lucide="users" class="w-4 h-4"></i>
-              <span>Known Browser Clients</span>
+              <i data-lucide="wifi" class="w-4 h-4"></i>
+              <span>Nearby Devices</span>
             </span>
             <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
           </summary>
-          <div class="known-peers-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
-            <p class="text-center italic opacity-60">Connect once to remember a browser client here.</p>
+          <div id="nearby-devices-list-2" class="nearby-devices-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
+            <div class="flex items-center justify-center gap-2 py-2">
+              <div class="w-4 h-4 rounded-full border-2 border-[var(--ink)] border-t-transparent animate-spin"></div>
+              <span>Scanning local network...</span>
+            </div>
           </div>
         </details>
       </div>

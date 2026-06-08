@@ -41,7 +41,7 @@ const state = {
   textHistory: [],
   fileHistory: [],
   queuedShare: null,
-  knownPeers: [],
+  nearbyDevices: new Map(),
   latency: 0,
   pingIntervalId: null,
   networkPath: { mode: "unknown", detail: "Route: detecting", monitorId: null, remoteMode: "unknown" },
@@ -199,7 +199,7 @@ function playSound(type) {
 window.addEventListener("DOMContentLoaded", async () => {
   // 1. Initialize user device name details
   restoreDeviceIdentity();
-  await loadKnownPeers();
+  initLocalDiscovery();
   await hydrateShareTargetQueue();
   await restoreHistoryRecords();
 
@@ -294,64 +294,106 @@ function updateDeviceName(newName) {
   }
 }
 
-async function loadKnownPeers() {
+async function initLocalDiscovery() {
   try {
-    state.knownPeers = (await getAllRecords(PEERS_STORE))
-      .sort((a, b) => b.lastSeen - a.lastSeen)
-      .slice(0, 20);
-    renderKnownPeers();
+    const res = await fetch("https://api.ipify.org?format=json");
+    const data = await res.json();
+    const publicIp = data.ip;
+    
+    // Hash IP to create a topic
+    const encoder = new TextEncoder();
+    const rawData = encoder.encode(publicIp + "ezdrop-discovery");
+    const hashBuffer = await crypto.subtle.digest('SHA-256', rawData);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const topic = "ezdrop/local/" + hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+    
+    if (typeof mqtt === "undefined") {
+      console.warn("MQTT library not loaded.");
+      return;
+    }
+    
+    const client = mqtt.connect("wss://test.mosquitto.org:8081/mqtt");
+    state.mqttClient = client;
+
+    client.on("connect", () => {
+      client.subscribe(topic);
+      setInterval(() => {
+        if (state.peer && !state.peer.disconnected && state.connectionState !== "CONNECTED") {
+          client.publish(topic, JSON.stringify({
+            peerId: state.peer.id,
+            name: state.identity.name,
+            timestamp: Date.now()
+          }));
+        }
+      }, 5000);
+    });
+
+    state.nearbyDevices = new Map();
+    client.on("message", (t, message) => {
+      if (t === topic) {
+        try {
+          const payload = JSON.parse(message.toString());
+          if (payload.peerId && payload.peerId !== state.peer?.id) {
+            state.nearbyDevices.set(payload.peerId, payload);
+            renderNearbyDevices();
+          }
+        } catch (e) {}
+      }
+    });
+    
+    // Cleanup old devices
+    setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      for (const [id, dev] of state.nearbyDevices.entries()) {
+        if (now - dev.timestamp > 15000) {
+          state.nearbyDevices.delete(id);
+          changed = true;
+        }
+      }
+      if (changed) renderNearbyDevices();
+    }, 5000);
+    
   } catch (err) {
-    debugLog("Known peer restore skipped:", err);
+    console.warn("Local discovery failed:", err);
+    document.querySelectorAll(".nearby-devices-container").forEach(c => {
+      c.innerHTML = `<div class="text-[10px] text-[var(--red)]">Failed to start local discovery.</div>`;
+    });
   }
 }
 
-async function rememberKnownPeer(peer) {
-  if (!peer?.id) return;
-  const record = {
-    id: peer.id,
-    name: peer.name || "Unknown peer",
-    lastSeen: Date.now(),
-    route: state.networkPath.mode || "unknown"
-  };
-  state.knownPeers = [record, ...state.knownPeers.filter(item => item.id !== record.id)].slice(0, 20);
-  renderKnownPeers();
-  try {
-    await putRecord(PEERS_STORE, record);
-  } catch (err) {
-    debugLog("Known peer save skipped:", err);
-  }
-}
-
-function renderKnownPeers() {
-  const containers = document.querySelectorAll(".known-peers-container");
+function renderNearbyDevices() {
+  const containers = document.querySelectorAll(".nearby-devices-container");
   if (!containers.length) return;
 
-  if (!state.knownPeers.length) {
+  if (!state.nearbyDevices || state.nearbyDevices.size === 0) {
     containers.forEach(container => {
-    container.innerHTML = `<p class="text-center italic opacity-60">Connect once to remember a browser client here.</p>`;
+      container.innerHTML = `<div class="flex items-center justify-center gap-2 py-2">
+        <div class="w-4 h-4 rounded-full border-2 border-[var(--ink)] border-t-transparent animate-spin"></div>
+        <span>Scanning local network...</span>
+      </div>`;
     });
     return;
   }
 
   containers.forEach(container => {
     container.innerHTML = "";
-    state.knownPeers.forEach(peer => {
+    state.nearbyDevices.forEach(peer => {
       const item = document.createElement("button");
-      item.className = "brutal-btn-sm bg-[var(--surface-warm)] p-2 text-left font-mono-custom text-xs flex justify-between items-center gap-2";
-      item.onclick = () => connectToKnownPeer(peer.id);
-      const lastSeen = new Date(peer.lastSeen).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      item.innerHTML = `<span><strong>${escapeHtml(peer.name)}</strong><br><span class="text-[9px] text-[var(--muted)]">${escapeHtml(peer.route || "unknown")} • ${lastSeen}</span></span><span class="text-[9px] uppercase">Connect</span>`;
+      item.className = "brutal-btn-sm bg-[var(--surface-warm)] p-2 text-left font-mono-custom text-xs flex justify-between items-center gap-2 w-full";
+      item.onclick = () => connectToNearbyPeer(peer.peerId);
+      item.innerHTML = `<span><strong>${escapeHtml(peer.name)}</strong><br><span class="text-[9px] text-[var(--muted)]">Nearby on Wi-Fi</span></span><span class="text-[9px] uppercase bg-[var(--ink)] text-white px-2 py-1 rounded-sm">Connect</span>`;
       container.appendChild(item);
     });
   });
 }
 
-function connectToKnownPeer(peerId) {
+function connectToNearbyPeer(peerId) {
   if (!peerId || !state.peer) {
-    showGlobalAlert("Known peer is not available yet. Create a room first.", "error");
+    showGlobalAlert("Peer is not available yet. Please wait.", "error");
     return;
   }
-  renderAppByState("CONNECTING", "Calling remembered browser client...");
+  renderAppByState("CONNECTING", "Calling nearby device...");
   initiateDirectHandshake(peerId);
 }
 
@@ -514,9 +556,6 @@ function openEzDropDb() {
       }
       if (!db.objectStoreNames.contains(HISTORY_STORE)) {
         db.createObjectStore(HISTORY_STORE, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains(PEERS_STORE)) {
-        db.createObjectStore(PEERS_STORE, { keyPath: "id" });
       }
     };
     request.onsuccess = () => resolve(request.result);
