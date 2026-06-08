@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://vyas-devgna.github.io/ez-drop/">
+  <a href="https://vyasdevgna.online//ez-drop/">
     <img alt="Live App" src="https://img.shields.io/badge/Live_App-open-FFD93D?style=for-the-badge&labelColor=111111&color=FFD93D" />
   </a>
   <img alt="Static App" src="https://img.shields.io/badge/Static_App-GitHub_Pages-F9F8F6?style=for-the-badge&labelColor=111111&color=F9F8F6" />
