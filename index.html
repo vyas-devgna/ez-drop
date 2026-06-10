@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
   <title>ez-drop — Instant Peer-to-Peer File Transfer</title>
-  
+
   <!-- SEO & PWA Meta -->
   <meta name="description" content="A zero-cost, serverless, peer-to-peer secure file and text transfer utility. No storage, no limits.">
   <meta name="theme-color" content="#F9F8F6">
@@ -18,6 +18,9 @@
   <link rel="apple-touch-icon" href="assets/logo.png">
 
   <!-- CDN Dependencies -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Playfair+Display:ital,wght@0,700;1,400&family=JetBrains+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
   <script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -68,7 +71,7 @@
       </div>
 
       <!-- Burger Drawer Trigger -->
-      <button onclick="toggleMenu()" class="brutal-btn bg-[var(--surface-warm)] p-2.5 px-4 font-mono-custom uppercase font-bold text-xs tracking-wider flex items-center gap-2" aria-label="Open secondary menu">
+      <button onclick="toggleMenu()" class="brutal-btn bg-[var(--surface-warm)] p-2.5 px-4 font-mono-custom uppercase font-bold text-xs tracking-wider flex items-center gap-2" aria-label="Open settings menu">
         <i data-lucide="menu" class="w-4 h-4"></i>
         <span class="hidden sm:inline">Menu</span>
       </button>
@@ -85,171 +88,199 @@
         </div>
         <button onclick="clearQueuedShare()" class="brutal-btn-sm bg-[var(--paper)] px-3 py-1 text-xs font-mono-custom font-bold uppercase">Clear</button>
       </div>
-      <p class="text-[10px] font-mono-custom text-[var(--ink)]">Connect to a peer below, or choose a known client, and ez-drop will send these items first.</p>
+      <p class="text-[10px] font-mono-custom text-[var(--ink)]">Connect to any device below and these items will be sent first.</p>
       <div id="share-target-files" class="font-mono-custom text-[10px] flex flex-col gap-1"></div>
     </section>
 
-    <!-- STATE 1: READY / HOME SCREEN (Simplified progressive disclosure grid) -->
-    <section id="state-ready" class="action-grid py-4">
-      
-      <!-- Card 1: Share device ticket -->
-      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow relative flex flex-col gap-5">
-        <!-- Stylized Sketch Tape Accent -->
-        <div class="absolute -top-3 left-12 right-12 h-6 bg-[rgba(212,175,55,0.3)] border-y border-dashed border-[var(--ink)] rotate-[-1deg] pointer-events-none"></div>
+    <!-- STATE 1: READY / HOME SCREEN — local-first discovery layout -->
+    <section id="state-ready" class="py-2 flex flex-col gap-5">
 
-        <div class="flex justify-between items-center mt-2 border-b-2 border-dashed border-[var(--ink)] pb-2">
-          <span class="text-xs font-mono-custom bg-[var(--ink)] text-[var(--paper)] px-2.5 py-0.5 uppercase tracking-widest">Share this device</span>
-          <span class="text-[10px] font-mono-custom text-[var(--muted)] uppercase font-bold" id="ready-status-desc">Generating Room...</span>
-        </div>
-
-        <div class="text-center py-2 relative">
-          <span class="font-sketch text-xs absolute -top-2 left-1 text-[var(--muted)] rotate-[-5deg] select-none">Your 5-digit code:</span>
-          <div id="room-code-display" class="font-mono-custom room-code-text font-bold tracking-widest text-[var(--ink)] select-all py-2">
-            00000
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2.5">
-          <button onclick="copyShareLink()" class="brutal-btn bg-[var(--surface-warm)] py-3 px-2 text-xs font-mono-custom font-bold uppercase flex items-center justify-center gap-2">
-            <i data-lucide="copy" class="w-4 h-4"></i>
-            <span id="copy-btn-text">Copy Link</span>
-          </button>
-          <button id="native-share-btn" onclick="triggerNativeShare()" class="brutal-btn bg-[var(--surface-warm)] py-3 px-2 text-xs font-mono-custom font-bold uppercase flex items-center justify-center gap-2 opacity-50 cursor-not-allowed" disabled>
-            <i data-lucide="share-2" class="w-4 h-4"></i>
-            <span>Share Link</span>
-          </button>
-        </div>
-
-        <!-- Cardboard framed QR integration -->
-        <div class="bg-[var(--paper)] brutal-border p-3 flex flex-col items-center justify-center relative mt-1 min-h-[170px]">
-          <div class="absolute -top-2.5 -right-2 bg-[var(--gold)] brutal-border text-[9px] font-mono-custom p-0.5 px-2.5 font-bold rotate-[4deg] uppercase">
-            Live QR Code
-          </div>
-          <div id="qrcode" class="bg-white p-2 border-2 border-[var(--ink)]"></div>
-          <div id="qr-fallback-msg" class="hidden text-center text-xs font-mono-custom text-[var(--red)] mt-2">QR failed to build.</div>
-        </div>
-        <p class="text-[11px] font-mono-custom text-[var(--muted)] text-center">Ask the other device to scan or enter your 5-digit code to connect.</p>
-      </div>
-
-      <!-- Card 2: Connect to someone else -->
-      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col justify-between gap-5 relative">
-        <div class="flex flex-col gap-2.5">
-          <h2 class="serif-display text-2xl font-bold">Connect to another device</h2>
-          <p class="text-xs text-[var(--muted)] font-mono-custom">Enter their code manually below or trigger the camera reader.</p>
-        </div>
-
-        <div class="flex flex-col gap-3">
-          <label for="target-room-input" class="sr-only">Enter 5 digit target code</label>
-          <input type="text" id="target-room-input" placeholder="Enter Code (e.g. 84720)" maxlength="5" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" class="bg-[var(--paper)] brutal-border p-4 font-mono-custom font-bold text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[var(--ink)] uppercase w-full" oninput="handleTargetInput(this)">
-          
-          <button onclick="connectToRoomBtn()" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] p-4 font-mono-custom uppercase font-bold text-sm tracking-wide flex items-center justify-center gap-2">
-            <i data-lucide="arrow-right-circle" class="w-5 h-5"></i>
-            <span>Connect to Peer</span>
-          </button>
-        </div>
-
-        <div class="flex items-center gap-2 my-1">
-          <div class="flex-grow border-t border-[var(--ink)] border-dashed"></div>
-          <span class="text-xs font-mono-custom text-[var(--muted)] uppercase font-bold select-none">or</span>
-          <div class="flex-grow border-t border-[var(--ink)] border-dashed"></div>
-        </div>
-
-        <button onclick="openQRScanner()" class="brutal-btn bg-[var(--yellow)] p-4 font-mono-custom uppercase font-bold text-sm tracking-wide flex items-center justify-center gap-2.5">
-          <i data-lucide="scan" class="w-5 h-5"></i>
-          <span>Scan Partner QR</span>
-        </button>
-        <p class="text-[11px] font-mono-custom text-[var(--muted)] text-center">Your camera permissions are only initialized upon tapping the scan tool.</p>
-
-        <details class="bg-[var(--paper)] brutal-border p-3 cursor-pointer group" open>
-          <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
-            <span class="flex items-center gap-2">
-              <i data-lucide="wifi" class="w-4 h-4"></i>
-              <span>Nearby Devices</span>
-            </span>
-            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
-          </summary>
-          <div id="nearby-devices-list-1" class="nearby-devices-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
-            <div class="flex items-center justify-center gap-2 py-2">
-              <div class="w-4 h-4 rounded-full border-2 border-[var(--ink)] border-t-transparent animate-spin"></div>
-              <span>Scanning local network...</span>
+      <!-- Identity hero: this device, radar, internet share toggle -->
+      <div class="bg-[var(--surface)] brutal-border p-5 brutal-shadow relative">
+        <div class="flex justify-between items-center gap-4">
+          <div class="flex items-center gap-4 min-w-0">
+            <div class="device-avatar select-none" aria-hidden="true">
+              <span class="radar-ping"></span>
+              <span class="radar-ping"></span>
+              <span class="radar-ping"></span>
+              <i data-lucide="laptop" id="hero-device-icon" class="w-6 h-6"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[10px] font-mono-custom uppercase tracking-widest text-[var(--muted)] font-bold">This device</div>
+              <div id="hero-name-wrap" class="flex items-center gap-2 min-w-0">
+                <button id="hero-device-name" onclick="startHeroNameEdit()" class="hero-name-btn serif-display text-2xl font-bold tracking-tight" title="Rename this device">
+                  <span id="hero-device-name-text">…</span>
+                  <i data-lucide="pencil-line" class="w-4 h-4 opacity-60"></i>
+                </button>
+              </div>
+              <div class="text-[10px] font-mono-custom text-[var(--muted)] mt-1"><span id="ready-status-desc">Waking up the radio…</span></div>
             </div>
           </div>
-        </details>
+          <button id="internet-share-toggle" onclick="toggleInternetShare()" aria-expanded="false" aria-controls="internet-share-panel" class="brutal-btn bg-[var(--surface-warm)] p-3 px-4 font-mono-custom text-xs font-bold uppercase tracking-wider flex items-center gap-2 shrink-0" title="Share this device over the internet">
+            <i data-lucide="globe-2" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">Internet</span>
+          </button>
+        </div>
+
+        <!-- Collapsible internet share panel (QR + code + link) -->
+        <div id="internet-share-panel" class="share-panel">
+          <div>
+            <div class="share-grid border-t-2 border-dashed border-[var(--ink)] pt-4">
+              <div class="bg-[var(--paper)] brutal-border p-3 flex flex-col items-center justify-center relative min-h-[170px]">
+                <div class="absolute -top-2.5 -right-2 bg-[var(--gold)] brutal-border text-[9px] font-mono-custom p-0.5 px-2.5 font-bold rotate-[4deg] uppercase">
+                  Live QR
+                </div>
+                <div id="qrcode" class="bg-white p-2 border-2 border-[var(--ink)]"></div>
+                <div id="qr-fallback-msg" class="hidden text-center text-xs font-mono-custom text-[var(--red)] mt-2">QR failed to build.</div>
+              </div>
+              <div class="flex flex-col gap-3 min-w-0">
+                <div class="text-center relative py-1">
+                  <span class="font-sketch text-xs absolute -top-2 left-1 text-[var(--muted)] rotate-[-5deg] select-none">Your 5-digit code:</span>
+                  <div id="room-code-display" class="font-mono-custom room-code-text font-bold tracking-widest text-[var(--ink)] select-all py-2">00000</div>
+                </div>
+                <div class="grid grid-cols-2 gap-2.5">
+                  <button onclick="copyShareLink()" class="brutal-btn bg-[var(--surface-warm)] py-3 px-2 text-xs font-mono-custom font-bold uppercase flex items-center justify-center gap-2">
+                    <i data-lucide="copy" class="w-4 h-4"></i>
+                    <span id="copy-btn-text">Copy Link</span>
+                  </button>
+                  <button id="native-share-btn" onclick="triggerNativeShare()" class="brutal-btn bg-[var(--surface-warm)] py-3 px-2 text-xs font-mono-custom font-bold uppercase flex items-center justify-center gap-2 opacity-50 cursor-not-allowed" disabled>
+                    <i data-lucide="share-2" class="w-4 h-4"></i>
+                    <span>Share Link</span>
+                  </button>
+                </div>
+                <p class="text-[11px] font-mono-custom text-[var(--muted)]">Anyone with this code, link, or QR can request to connect — even across networks. You always approve first.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-grid">
+        <!-- Primary: nearby devices -->
+        <div class="bg-[var(--surface)] brutal-border p-5 brutal-shadow flex flex-col gap-4 relative">
+          <div class="flex justify-between items-center border-b-2 border-dashed border-[var(--ink)] pb-2">
+            <h2 class="serif-display text-xl font-bold flex items-center gap-2">
+              <i data-lucide="radar" class="w-5 h-5"></i>
+              <span>Nearby devices</span>
+            </h2>
+            <span class="scan-chip font-mono-custom text-[9px] uppercase font-bold tracking-wider select-none">Scanning</span>
+          </div>
+          <div id="nearby-devices-list-1" class="nearby-devices-container flex flex-col gap-2 font-mono-custom text-xs">
+            <div class="nearby-empty">
+              <div class="nearby-sweep" aria-hidden="true"></div>
+              <span>Scanning your network…</span>
+              <span class="text-[10px] opacity-75">Open ez-drop on another device on this Wi-Fi and it will appear here.</span>
+            </div>
+          </div>
+          <p class="text-[11px] font-mono-custom text-[var(--muted)]">Devices running ez-drop on your network show up automatically. Tap one to connect — files travel directly over your local network when possible.</p>
+        </div>
+
+        <!-- Secondary: manual connect -->
+        <div class="bg-[var(--surface)] brutal-border p-5 brutal-shadow flex flex-col gap-4">
+          <div class="border-b-2 border-dashed border-[var(--ink)] pb-2">
+            <h2 class="serif-display text-xl font-bold">Connect with a code</h2>
+            <p class="text-xs text-[var(--muted)] font-mono-custom mt-1">Can't see the device above? Use its code or QR instead.</p>
+          </div>
+
+          <label for="target-room-input" class="sr-only">Enter 5 digit target code</label>
+          <input type="text" id="target-room-input" placeholder="Enter Code (e.g. 84720)" maxlength="5" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" class="bg-[var(--paper)] brutal-border p-4 font-mono-custom font-bold text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[var(--ink)] uppercase w-full" oninput="handleTargetInput(this)">
+
+          <button onclick="connectToRoomBtn()" class="brutal-btn bg-[var(--ink)] text-[var(--paper)] p-4 font-mono-custom uppercase font-bold text-sm tracking-wide flex items-center justify-center gap-2">
+            <i data-lucide="arrow-right-circle" class="w-5 h-5"></i>
+            <span>Connect</span>
+          </button>
+
+          <div class="flex items-center gap-2 my-1">
+            <div class="flex-grow border-t border-[var(--ink)] border-dashed"></div>
+            <span class="text-xs font-mono-custom text-[var(--muted)] uppercase font-bold select-none">or</span>
+            <div class="flex-grow border-t border-[var(--ink)] border-dashed"></div>
+          </div>
+
+          <button onclick="openQRScanner()" class="brutal-btn bg-[var(--yellow)] p-4 font-mono-custom uppercase font-bold text-sm tracking-wide flex items-center justify-center gap-2.5">
+            <i data-lucide="scan" class="w-5 h-5"></i>
+            <span>Scan QR Code</span>
+          </button>
+          <p class="text-[11px] font-mono-custom text-[var(--muted)] text-center">Camera turns on only while the scanner is open.</p>
+        </div>
       </div>
     </section>
 
     <!-- STATE 2: CONNECTING / TRANSITIONAL STATE CARD -->
     <section id="state-connecting" class="hidden max-w-md mx-auto w-full py-12">
       <div class="bg-[var(--surface)] brutal-border p-8 brutal-shadow text-center flex flex-col gap-6 relative">
-        <div class="animate-spin inline-block mx-auto w-12 h-12 border-4 border-solid border-[var(--ink)] border-t-transparent rounded-full" role="status" aria-label="loading"></div>
+        <div class="link-beam" role="status" aria-label="Connecting devices">
+          <div class="link-node"><i data-lucide="laptop" class="w-5 h-5"></i></div>
+          <div class="link-track"><span class="link-dot"></span></div>
+          <div class="link-node"><i data-lucide="smartphone" class="w-5 h-5"></i></div>
+        </div>
         <div>
-          <h2 class="serif-display text-xl font-bold">Establishing Channel</h2>
+          <h2 class="serif-display text-xl font-bold">Linking devices…</h2>
           <p id="connecting-state-desc" class="text-xs font-mono-custom text-[var(--muted)] mt-2">Connecting to room...</p>
         </div>
         <button onclick="terminateSession()" class="brutal-btn bg-[var(--muted-paper)] p-3 font-mono-custom uppercase font-bold text-xs">
-          Cancel Connection Attempt
+          Cancel
         </button>
       </div>
     </section>
 
-    <!-- STATE 3: CONNECTED WORKSPACE (Replaces dashboard once accepting incoming/outgoing connection) -->
+    <!-- STATE 3: CONNECTED WORKSPACE -->
     <section id="state-connected" class="hidden flex flex-col gap-6 max-w-4xl mx-auto w-full py-4">
-      
+
       <!-- Unified Connection Info Badge -->
       <div class="bg-[var(--surface-warm)] brutal-border p-4 brutal-shadow flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 min-w-0">
           <div class="w-3.5 h-3.5 rounded-full bg-[var(--ok)] shrink-0 pulse-indicator"></div>
-          <div>
-            <div class="text-[10px] font-mono-custom text-[var(--muted)] uppercase tracking-wider font-bold">Active Connection Stream</div>
+          <div class="min-w-0">
+            <div class="text-[10px] font-mono-custom text-[var(--muted)] uppercase tracking-wider font-bold">Connected to</div>
             <div class="flex items-center gap-2 flex-wrap">
               <span id="peer-name-display" class="font-bold serif-display text-lg">Recipient Name</span>
               <span id="network-path-badge" class="font-mono-custom text-[9px] uppercase bg-[var(--muted-paper)] text-[var(--ink)] brutal-border px-2 py-0.5">Route: detecting</span>
+              <span id="latency-display" class="hidden font-mono-custom text-[9px] uppercase bg-[var(--paper)] brutal-border px-2 py-0.5">-- ms</span>
             </div>
-            <div id="network-path-detail" class="text-[9px] font-mono-custom text-[var(--muted)] mt-1">Checking whether this peer can use your local network...</div>
+            <div id="network-path-detail" class="text-[9px] font-mono-custom text-[var(--muted)] mt-1">Checking the fastest route between your devices…</div>
           </div>
         </div>
-        <button onclick="terminateSession()" class="brutal-btn bg-[var(--red)] text-white p-2 px-4 text-xs font-mono-custom uppercase font-bold">
-          Disconnect Stream
+        <button onclick="terminateSession()" class="brutal-btn bg-[var(--red)] text-white p-2 px-4 text-xs font-mono-custom uppercase font-bold shrink-0">
+          Disconnect
         </button>
       </div>
 
       <!-- Interactive Core Workspace Grid -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
-        <!-- Left Column: Quick Drag Drop & Pick label -->
-        <div class="flex flex-col gap-6">
-          <div id="drop-zone" class="bg-[var(--surface)] brutal-border p-8 brutal-shadow relative transition-colors duration-200 flex flex-col items-center justify-center text-center cursor-pointer min-h-[250px] border-dashed border-4 border-[var(--ink)]">
-            <input type="file" id="file-picker" multiple class="hidden" onchange="handleFileSelection(event)">
-            <input type="file" id="folder-picker" webkitdirectory directory multiple class="hidden" onchange="handleFileSelection(event)">
-            
-            <div class="flex flex-col items-center justify-center gap-4">
-              <div class="p-4 bg-[var(--muted-paper)] rounded-full brutal-border">
-                <i data-lucide="upload-cloud" class="w-10 h-10 text-[var(--ink)]"></i>
-              </div>
-              <div>
-                <h3 class="serif-display text-xl font-bold mb-1">Send Files</h3>
-                <p class="text-xs font-mono-custom text-[var(--muted)] mb-2">Drop local files here or tap to search storage.</p>
-                <p class="text-[9px] font-mono-custom text-[var(--ink)] bg-[var(--yellow)] px-2 py-0.5 inline-block brutal-border">Unlimited Sizing • Peer-to-Peer RAM Stream</p>
-                <button onclick="openFolderPicker(event)" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 mt-2 text-[10px] font-mono-custom font-bold uppercase">Choose Folder</button>
-              </div>
-            </div>
+
+        <!-- Left Column: Drop zone -->
+        <div id="drop-zone" class="bg-[var(--surface)] brutal-border p-6 brutal-shadow relative flex flex-col items-center justify-center text-center cursor-pointer min-h-[250px] border-dashed border-4 border-[var(--ink)] gap-4">
+          <input type="file" id="file-picker" multiple class="hidden" onchange="handleFileSelection(event)">
+          <input type="file" id="folder-picker" webkitdirectory directory multiple class="hidden" onchange="handleFileSelection(event)">
+
+          <div class="p-4 bg-[var(--muted-paper)] rounded-full brutal-border">
+            <i data-lucide="upload-cloud" class="w-10 h-10 text-[var(--ink)]"></i>
           </div>
+          <div>
+            <h3 class="serif-display text-xl font-bold mb-1">Drop files to send</h3>
+            <p class="text-xs font-mono-custom text-[var(--muted)]">…or tap anywhere in this box to browse.</p>
+          </div>
+          <div class="flex gap-2 flex-wrap justify-center">
+            <button onclick="event.stopPropagation(); document.getElementById('file-picker').click()" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-[10px] font-mono-custom font-bold uppercase">Choose Files</button>
+            <button onclick="openFolderPicker(event)" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-[10px] font-mono-custom font-bold uppercase">Choose Folder</button>
+          </div>
+          <p class="text-[9px] font-mono-custom text-[var(--ink)] bg-[var(--yellow)] px-2 py-0.5 inline-block brutal-border">No size limit • Direct peer-to-peer stream</p>
         </div>
 
-        <!-- Right Column: Quick Chat Snippets -->
+        <!-- Right Column: Quick text -->
         <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col justify-between gap-4">
           <div class="flex justify-between items-center border-b border-[var(--ink)] pb-2">
-            <h3 class="serif-display text-lg font-bold">Direct Clipboard / Text</h3>
-            <span class="text-[9px] font-mono-custom uppercase tracking-wider text-[var(--muted)]">Send instantly</span>
+            <h3 class="serif-display text-lg font-bold">Send text</h3>
+            <span class="text-[9px] font-mono-custom uppercase tracking-wider text-[var(--muted)]">Instant delivery</span>
           </div>
 
           <div class="flex-grow flex flex-col gap-2">
-            <textarea id="text-input" placeholder="Type or paste text snippets here..." rows="4" class="bg-[var(--paper)] brutal-border p-3 font-mono-custom text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)] resize-none w-full flex-grow"></textarea>
-            
+            <textarea id="text-input" placeholder="Type or paste text, links, notes…" rows="4" class="bg-[var(--paper)] brutal-border p-3 font-mono-custom text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)] resize-none w-full flex-grow"></textarea>
+
             <div class="flex gap-2 justify-end">
               <button onclick="pasteFromClipboard()" class="brutal-btn-sm bg-[var(--surface-warm)] p-2 px-3 text-xs font-mono-custom font-bold flex items-center gap-1.5" title="Paste from device clipboard">
                 <i data-lucide="clipboard" class="w-4 h-4"></i>
-                <span>Grab Clip</span>
+                <span>Paste</span>
               </button>
               <button onclick="sendTextMessage()" class="brutal-btn-sm bg-[var(--ink)] text-[var(--paper)] p-2 px-4 text-xs font-mono-custom font-bold uppercase flex items-center gap-2">
                 <span>Send</span>
@@ -263,14 +294,14 @@
       <!-- Connected Transfer List Stream -->
       <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col gap-4">
         <div class="flex justify-between items-center border-b-2 border-[var(--ink)] pb-2">
-          <h3 class="serif-display text-lg font-bold">Transfer Queue & Feeds</h3>
+          <h3 class="serif-display text-lg font-bold">Transfers</h3>
           <button onclick="clearSessionLogs()" class="text-xs font-mono-custom hover:underline uppercase text-[var(--red)] font-bold">Clear All</button>
         </div>
 
         <!-- Blank Queue State -->
         <div id="queue-empty-state" class="text-center py-6 font-mono-custom text-xs text-[var(--muted)] flex flex-col items-center justify-center gap-2">
           <i data-lucide="inbox" class="w-7 h-7 opacity-50"></i>
-          <span>No files or messages traded in this session yet. Pick a file above to begin.</span>
+          <span>Nothing sent yet. Drop a file or send a snippet above to begin.</span>
         </div>
 
         <div id="transfers-container" class="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
@@ -284,7 +315,7 @@
           <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
             <span class="flex items-center gap-2">
               <i data-lucide="history" class="w-4 h-4"></i>
-              <span>View Session History Log</span>
+              <span>History</span>
             </span>
             <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
           </summary>
@@ -306,9 +337,9 @@
             <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
           </summary>
           <div id="nearby-devices-list-2" class="nearby-devices-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
-            <div class="flex items-center justify-center gap-2 py-2">
-              <div class="w-4 h-4 rounded-full border-2 border-[var(--ink)] border-t-transparent animate-spin"></div>
-              <span>Scanning local network...</span>
+            <div class="nearby-empty">
+              <div class="nearby-sweep" aria-hidden="true"></div>
+              <span>Scanning your network…</span>
             </div>
           </div>
         </details>
@@ -328,10 +359,10 @@
         </div>
         <div class="flex flex-col gap-2">
           <button onclick="tryConnectionRecovery()" class="brutal-btn bg-[var(--yellow)] p-3 font-mono-custom uppercase font-bold text-xs">
-            Try Reconnecting Again
+            Try Again
           </button>
           <button onclick="generateNewRoomSession()" class="brutal-btn bg-[var(--surface)] p-3 font-mono-custom uppercase font-bold text-xs">
-            Generate New Room Ticket
+            Start Fresh
           </button>
         </div>
       </div>
@@ -356,10 +387,10 @@
   <!-- FULLSCREEN BURGER DRAWER / SLIDEOVER -->
   <div id="side-menu" class="fixed inset-0 bg-black/60 z-50 backdrop-blur-xs hidden transition-opacity flex justify-end" onclick="closeMenuOnOutsideClick(event)">
     <div class="w-full max-w-md bg-[var(--paper)] h-full brutal-border-l border-l-4 p-6 flex flex-col justify-between overflow-y-auto" onclick="event.stopPropagation()">
-      
+
       <!-- Drawer Header -->
       <div class="flex justify-between items-center border-b-2 border-[var(--ink)] pb-4">
-        <h2 class="serif-display text-2xl font-bold">Secondary Actions</h2>
+        <h2 class="serif-display text-2xl font-bold">Settings & Tools</h2>
         <button onclick="toggleMenu()" class="brutal-btn bg-[var(--surface-warm)] p-2" aria-label="Close menu" id="close-menu-btn">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
@@ -367,15 +398,15 @@
 
       <!-- Drawer Content -->
       <div class="flex-grow py-6 flex flex-col gap-6">
-        
+
         <!-- Rename Device Configuration -->
         <div class="bg-[var(--surface)] brutal-border p-4 brutal-shadow-sm flex flex-col gap-3">
           <h3 class="font-mono-custom text-xs uppercase text-[var(--muted)] font-bold tracking-wider">Device Customization</h3>
           <div class="flex flex-col gap-2">
-            <label for="menu-device-name" class="text-xs font-mono-custom">Edit Identity Name</label>
+            <label for="menu-device-name" class="text-xs font-mono-custom">Device name</label>
             <input type="text" id="menu-device-name" class="bg-[var(--paper)] brutal-border p-2 font-mono-custom text-xs focus:outline-none focus:bg-[var(--surface)]">
           </div>
-          
+
           <div class="flex items-center justify-between border-t border-[var(--muted-paper)] pt-3 mt-1">
             <label for="sound-toggle" class="text-xs font-mono-custom font-bold">Chimes & Audio Alerts</label>
             <button id="sound-toggle" onclick="toggleSoundPreference()" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-xs font-mono-custom font-bold uppercase">
@@ -390,10 +421,10 @@
             <h3 class="font-mono-custom text-xs uppercase text-[var(--ink)] font-bold tracking-wider">Passphrase Security</h3>
             <span class="text-[9px] font-mono-custom bg-[var(--gold)] text-black px-1.5 py-0.5 rounded-sm">Optional</span>
           </div>
-          <p class="text-[11px] font-mono-custom text-[var(--muted)]">Require peers matching your room ticket to authenticate with matching words before sharing files.</p>
+          <p class="text-[11px] font-mono-custom text-[var(--muted)]">Require connecting peers to know a shared passphrase before they can reach you.</p>
           <form class="flex flex-col gap-2" onsubmit="return false">
             <input type="password" id="passphrase-input" name="passphrase" autocomplete="current-password" placeholder="e.g. secret-token" class="bg-[var(--paper)] brutal-border p-2 font-mono-custom text-xs focus:outline-none" oninput="handlePassphraseChange(this.value)">
-            <p class="text-[9px] font-mono-custom text-[var(--muted)]">Verify shared passphrase check with local challenge handshake.</p>
+            <p class="text-[9px] font-mono-custom text-[var(--muted)]">Verified with a local challenge handshake — never sent in plain text.</p>
           </form>
         </div>
 
@@ -404,7 +435,7 @@
             <span>Install ez-drop PWA</span>
             <i data-lucide="download-cloud" class="w-4 h-4"></i>
           </button>
-          
+
           <div class="flex justify-between items-center text-xs font-mono-custom px-1.5 py-1">
             <span class="font-bold uppercase tracking-wider text-[10px] text-[var(--muted)]">PWA Service Worker:</span>
             <span id="pwa-status-tag" class="bg-[var(--red)] text-white px-2 py-0.5 rounded-sm uppercase text-[9px] font-bold">Offline Disabled</span>
@@ -429,9 +460,10 @@
             </summary>
             <div class="pt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
               <p>1. Open this page on two devices.</p>
-              <p>2. Enter the host's 5-digit Room Code on the connector device, or scan their QR code.</p>
-              <p>3. Tap 'Accept' on the host device modal once prompted.</p>
-              <p>4. If connection fails, swap restrictive Wi-Fi profiles to cellular hotspots.</p>
+              <p>2. On the same Wi-Fi? The other device appears under Nearby — just tap it.</p>
+              <p>3. Otherwise tap the Internet button on one device and enter its 5-digit code (or scan the QR) on the other.</p>
+              <p>4. Tap 'Accept' on the receiving device when prompted.</p>
+              <p>5. If connection fails, swap restrictive Wi-Fi profiles to cellular hotspots.</p>
               <button onclick="copyHelpToClipboard()" class="brutal-btn bg-[var(--paper)] p-2 mt-1 text-[10px] uppercase font-bold tracking-wider">Copy Connection Help details</button>
             </div>
           </details>
@@ -452,7 +484,7 @@
 
       <!-- Drawer Footer -->
       <div class="border-t-2 border-[var(--ink)] pt-4 flex justify-between items-center text-xs font-mono-custom">
-        <span class="opacity-60">v1.2.0-stable</span>
+        <span class="opacity-60">v1.3.0-stable</span>
         <button onclick="factoryResetApp()" class="text-[var(--red)] uppercase font-bold hover:underline">Reset App cache</button>
       </div>
 
@@ -468,7 +500,7 @@
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
-      
+
       <div id="interactive-reader" class="w-full aspect-square bg-black brutal-border relative overflow-hidden flex items-center justify-center">
         <div class="absolute inset-8 border-2 border-dashed border-[var(--yellow)] pointer-events-none opacity-80 z-10 animate-pulse"></div>
         <div class="text-white text-xs font-mono-custom text-center p-4">Opening camera stream...</div>
@@ -484,14 +516,14 @@
   <div id="invite-modal" class="fixed inset-0 bg-black/70 z-50 backdrop-blur-xs hidden flex items-center justify-center p-4">
     <div class="bg-[var(--surface-warm)] w-full max-w-sm brutal-border brutal-shadow-lg p-6 relative" id="invite-focus-holder">
       <div class="absolute -top-3 left-8 w-24 h-6 bg-[rgba(255,77,77,0.4)] border border-dashed border-[var(--ink)] rotate-[2deg]"></div>
-      
+
       <div class="text-center flex flex-col gap-4 mt-2">
         <div class="mx-auto w-12 h-12 bg-[var(--yellow)] rounded-full brutal-border flex items-center justify-center">
           <i data-lucide="handshake" class="w-6 h-6"></i>
         </div>
         <div>
-          <h3 class="serif-display text-xl font-bold">Connection Request</h3>
-          <p class="text-xs font-mono-custom text-[var(--muted)] mt-1">An outside peer wants to establish direct channels.</p>
+          <h3 class="serif-display text-xl font-bold">Incoming Connection</h3>
+          <p class="text-xs font-mono-custom text-[var(--muted)] mt-1">A device wants to connect to you.</p>
         </div>
 
         <div class="bg-[var(--surface)] brutal-border p-4 text-center">
@@ -541,7 +573,7 @@
         <div class="bg-[var(--surface)] brutal-border p-4 flex flex-col gap-3 relative">
           <div class="absolute -top-3 right-4 bg-black text-white px-2 py-0.5 text-[9px] font-mono-custom">NODE A (SENDER)</div>
           <h3 class="serif-display font-bold text-md">Node A: Copper Fox</h3>
-          
+
           <div class="flex flex-col gap-2">
             <textarea id="debug-text-a" placeholder="Type message from A..." rows="2" class="bg-[var(--paper)] brutal-border p-2 font-mono-custom text-xs focus:outline-none"></textarea>
             <button onclick="sendDebugPayload('A', 'text')" class="brutal-btn-sm bg-[var(--ink)] text-white p-2 text-xs font-mono-custom uppercase font-bold text-center">

@@ -1,6 +1,9 @@
 // --- APP CONSTANTS & ALGORITHMS ---
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const DEBUG_LOGS = false;
+// Files above this size are streamed straight to disk via the File System
+// Access API (when available) instead of being buffered in RAM.
+const STREAM_SAVE_THRESHOLD = 128 * 1024 * 1024;
 const CHUNK_SIZE = 64 * 1024; // Robust 64KB Packets
 const LAN_CHUNK_SIZE = 256 * 1024;
 const MAX_BUFFERED_AMOUNT = 1024 * 1024;
@@ -57,6 +60,10 @@ const state = {
 function getAppBasePath() {
   const pathname = window.location.pathname;
   return pathname.endsWith('/') ? pathname : pathname.slice(0, pathname.lastIndexOf('/') + 1);
+}
+
+function refreshIcons() {
+  if (typeof lucide !== "undefined") lucide.createIcons();
 }
 
 function debugLog(...args) {
@@ -204,7 +211,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   await restoreHistoryRecords();
 
   // 2. Render Lucide Icons
-  lucide.createIcons();
+  refreshIcons();
 
   // 3. Listen to PWA hooks
   setupPwaHooks();
@@ -258,16 +265,23 @@ function restoreDeviceIdentity() {
     safeStorageSet("ezdrop_name", savedName);
   }
   state.identity.name = savedName;
-  
+
   const mainInput = document.getElementById("device-name-input");
   if (mainInput) {
     mainInput.value = savedName;
   }
-  
+
   const menuInput = document.getElementById("menu-device-name");
   if (menuInput) {
     menuInput.value = savedName;
   }
+
+  const heroText = document.getElementById("hero-device-name-text");
+  if (heroText) heroText.textContent = savedName;
+
+  // Pick a hero glyph matching the device class before Lucide hydrates.
+  const heroIcon = document.getElementById("hero-device-icon");
+  if (heroIcon) heroIcon.setAttribute("data-lucide", isMobileDevice() ? "smartphone" : "laptop");
 }
 
 function updateDeviceName(newName) {
@@ -286,12 +300,62 @@ function updateDeviceName(newName) {
     menuInput.value = sanitized;
   }
 
+  const heroText = document.getElementById("hero-device-name-text");
+  if (heroText) heroText.textContent = sanitized;
+
   if (state.conn && state.connectionState === "CONNECTED") {
     state.conn.send({
       type: "peer-status",
       payload: { name: sanitized }
     });
   }
+}
+
+// --- HOME SCREEN: inline rename + internet share toggle ---
+function startHeroNameEdit() {
+  const wrap = document.getElementById("hero-name-wrap");
+  if (!wrap || wrap.querySelector("input")) return;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 24;
+  input.value = state.identity.name;
+  input.className = "hero-name-input";
+  input.setAttribute("aria-label", "Device name");
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") input.blur();
+    if (e.key === "Escape") {
+      input.value = state.identity.name;
+      input.blur();
+    }
+  });
+  input.addEventListener("blur", () => {
+    updateDeviceName(input.value.trim() || state.identity.name);
+    rebuildHeroNameButton();
+  });
+
+  wrap.innerHTML = "";
+  wrap.appendChild(input);
+  input.focus();
+  input.select();
+}
+
+function rebuildHeroNameButton() {
+  const wrap = document.getElementById("hero-name-wrap");
+  if (!wrap) return;
+  wrap.innerHTML = `<button id="hero-device-name" onclick="startHeroNameEdit()" class="hero-name-btn serif-display text-2xl font-bold tracking-tight" title="Rename this device"><span id="hero-device-name-text">${escapeHtml(state.identity.name)}</span><i data-lucide="pencil-line" class="w-4 h-4 opacity-60"></i></button>`;
+  refreshIcons();
+}
+
+function toggleInternetShare(force) {
+  const panel = document.getElementById("internet-share-panel");
+  const btn = document.getElementById("internet-share-toggle");
+  if (!panel || !btn) return;
+  const open = typeof force === "boolean" ? force : !panel.classList.contains("open");
+  panel.classList.toggle("open", open);
+  btn.setAttribute("aria-expanded", String(open));
+  btn.classList.toggle("bg-[var(--yellow)]", open);
+  btn.classList.toggle("bg-[var(--surface-warm)]", !open);
 }
 
 async function initLocalDiscovery() {
@@ -314,18 +378,13 @@ async function initLocalDiscovery() {
     
     const client = mqtt.connect("wss://test.mosquitto.org:8081/mqtt");
     state.mqttClient = client;
+    state.discoveryTopic = topic;
 
     client.on("connect", () => {
       client.subscribe(topic);
-      setInterval(() => {
-        if (state.peer && !state.peer.disconnected && state.connectionState !== "CONNECTED") {
-          client.publish(topic, JSON.stringify({
-            peerId: state.peer.id,
-            name: state.identity.name,
-            timestamp: Date.now()
-          }));
-        }
-      }, 5000);
+      // Announce immediately so peers see us without waiting a full beacon cycle.
+      publishPresence();
+      setInterval(publishPresence, 5000);
     });
 
     state.nearbyDevices = new Map();
@@ -357,9 +416,20 @@ async function initLocalDiscovery() {
   } catch (err) {
     console.warn("Local discovery failed:", err);
     document.querySelectorAll(".nearby-devices-container").forEach(c => {
-      c.innerHTML = `<div class="text-[10px] text-[var(--red)]">Failed to start local discovery.</div>`;
+      c.innerHTML = `<div class="nearby-empty"><span class="text-[var(--red)]">Auto-discovery is unavailable right now.</span><span class="text-[10px] opacity-75">Use the code or QR under the Internet button instead.</span></div>`;
     });
   }
+}
+
+function publishPresence() {
+  const client = state.mqttClient;
+  if (!client || !client.connected || !state.discoveryTopic) return;
+  if (!state.peer || state.peer.disconnected || state.connectionState === "CONNECTED") return;
+  client.publish(state.discoveryTopic, JSON.stringify({
+    peerId: state.peer.id,
+    name: state.identity.name,
+    timestamp: Date.now()
+  }));
 }
 
 function renderNearbyDevices() {
@@ -368,9 +438,10 @@ function renderNearbyDevices() {
 
   if (!state.nearbyDevices || state.nearbyDevices.size === 0) {
     containers.forEach(container => {
-      container.innerHTML = `<div class="flex items-center justify-center gap-2 py-2">
-        <div class="w-4 h-4 rounded-full border-2 border-[var(--ink)] border-t-transparent animate-spin"></div>
-        <span>Scanning local network...</span>
+      container.innerHTML = `<div class="nearby-empty">
+        <div class="nearby-sweep" aria-hidden="true"></div>
+        <span>Scanning your network…</span>
+        <span class="text-[10px] opacity-75">Open ez-drop on another device on this Wi-Fi and it will appear here.</span>
       </div>`;
     });
     return;
@@ -380,12 +451,15 @@ function renderNearbyDevices() {
     container.innerHTML = "";
     state.nearbyDevices.forEach(peer => {
       const item = document.createElement("button");
-      item.className = "brutal-btn-sm bg-[var(--surface-warm)] p-2 text-left font-mono-custom text-xs flex justify-between items-center gap-2 w-full";
+      item.className = "nearby-item brutal-btn-sm bg-[var(--surface-warm)] p-3 text-left font-mono-custom text-xs flex items-center gap-3 w-full";
       item.onclick = () => connectToNearbyPeer(peer.peerId);
-      item.innerHTML = `<span><strong>${escapeHtml(peer.name)}</strong><br><span class="text-[9px] text-[var(--muted)]">Nearby on Wi-Fi</span></span><span class="text-[9px] uppercase bg-[var(--ink)] text-white px-2 py-1 rounded-sm">Connect</span>`;
+      item.innerHTML = `<span class="file-kind-icon"><i data-lucide="monitor-smartphone" class="w-4 h-4"></i></span>
+        <span class="min-w-0 flex-grow"><strong class="truncate" style="display:block">${escapeHtml(peer.name)}</strong><span class="text-[9px] text-[var(--muted)]">On your network • tap to connect</span></span>
+        <span class="text-[9px] uppercase bg-[var(--ink)] text-white px-2 py-1 shrink-0">Connect</span>`;
       container.appendChild(item);
     });
   });
+  refreshIcons();
 }
 
 function connectToNearbyPeer(peerId) {
@@ -403,6 +477,51 @@ function regenerateIdentityName() {
 }
 
 // --- UTILITIES ---
+function sanitizeFileName(name) {
+  const base = String(name || "download").split(/[\\/]/).pop();
+  return base.replace(/[\u0000-\u001f<>:"|?*]/g, "_").slice(0, 180) || "download";
+}
+
+function getFileKindIcon(name = "") {
+  const ext = name.split(".").pop().toLowerCase();
+  if (/^(png|jpe?g|gif|webp|avif|svg|heic|bmp|ico)$/.test(ext)) return "image";
+  if (/^(mp4|mov|webm|mkv|avi|m4v)$/.test(ext)) return "video";
+  if (/^(mp3|wav|flac|ogg|m4a|aac|opus)$/.test(ext)) return "music";
+  if (/^(zip|rar|7z|tar|gz|bz2|xz)$/.test(ext)) return "archive";
+  if (/^(pdf|docx?|txt|md|rtf|pptx?|xlsx?|csv|epub)$/.test(ext)) return "file-text";
+  if (/^(js|ts|jsx|tsx|html|css|json|py|java|c|cpp|h|sh|go|rs|rb|php)$/.test(ext)) return "file-code";
+  return "file";
+}
+
+function formatEta(seconds) {
+  if (!isFinite(seconds) || seconds <= 0) return "";
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+function hapticTap(pattern = 15) {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch (err) {
+    // Vibration is best-effort feedback only.
+  }
+}
+
+function countActiveTransfers() {
+  const isActive = t => ["WAITING_ACCEPT", "QUEUED", "SENDING", "RECEIVING"].includes(t.status);
+  return Array.from(state.outgoingTransfers.values()).filter(isActive).length
+    + Array.from(state.incomingTransfers.values()).filter(isActive).length;
+}
+
+function updateAppBadge() {
+  if (!("setAppBadge" in navigator)) return;
+  const activeCount = countActiveTransfers();
+  const op = activeCount ? navigator.setAppBadge(activeCount) : navigator.clearAppBadge();
+  op?.catch?.(() => {});
+}
+
 function escapeHtml(str) {
   return str.replace(/[&<>"']/g, function (m) {
     switch (m) {
@@ -742,6 +861,14 @@ function setupMobileLifecycleHooks() {
   window.addEventListener("pagehide", () => {
     releaseTransferWakeLock();
   });
+
+  // Guard against accidentally killing live transfers with a tab close.
+  window.addEventListener("beforeunload", (e) => {
+    if (hasActiveTransfers()) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
 }
 
 async function requestNotificationAccess() {
@@ -850,6 +977,24 @@ function disablePasswordMode() {
 
 // --- DYNAMIC APPLICATION STATE STATE-RENDER ---
 function renderAppByState(targetState, diagnosticMsg = "") {
+  const isStateChange = state.connectionState !== targetState;
+  // Keep logical state synchronous even when the visual swap is deferred
+  // into a view transition frame.
+  state.connectionState = targetState;
+
+  const apply = () => renderAppByStateImmediate(targetState, diagnosticMsg);
+  if (
+    isStateChange &&
+    typeof document.startViewTransition === "function" &&
+    !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    document.startViewTransition(apply);
+  } else {
+    apply();
+  }
+}
+
+function renderAppByStateImmediate(targetState, diagnosticMsg = "") {
   state.connectionState = targetState;
 
   // DOM target elements mapping
@@ -883,7 +1028,7 @@ function renderAppByState(targetState, diagnosticMsg = "") {
       dot.className = "relative inline-flex rounded-full h-3.5 w-3.5 bg-[#1F8A4C]";
       dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
       ariaStatus.textContent = "Signaling ready to connect.";
-      document.getElementById("ready-status-desc").textContent = "Waiting for entry";
+      document.getElementById("ready-status-desc").textContent = "Online • visible to nearby devices";
       break;
 
     case "CONNECTING":
@@ -949,6 +1094,7 @@ function initPeerSession(targetConnectCode = null) {
       updateRoomTicket(state.roomCode);
       renderAppByState("READY");
     }
+    publishPresence();
   });
 
   state.peer.on("connection", (incomingConn) => {
@@ -1258,6 +1404,7 @@ function markConnectionReady(connInstance, peerName) {
   document.getElementById("peer-name-display").textContent = escapeHtml(peerName);
   renderNetworkPath();
   playSound("connect");
+  hapticTap(20);
   initiatePingLoop();
   startNetworkPathMonitoring(connInstance);
   setTimeout(() => {
@@ -1444,12 +1591,42 @@ function terminateSession() {
 }
 
 function handleDisconnectTransition() {
+  const wasConnected = state.connectionState === "CONNECTED";
   stopNetworkPathMonitoring();
+  failActiveTransfers("Connection lost");
   state.conn = null;
   state.connectedPeer = null;
   state.networkPath = { mode: "unknown", detail: "Route: detecting", monitorId: null, remoteMode: "unknown" };
   clearInterval(state.pingIntervalId);
+
+  const latencyChip = document.getElementById("latency-display");
+  if (latencyChip) latencyChip.classList.add("hidden");
+
   renderAppByState("READY");
+  if (wasConnected) {
+    showGlobalAlert("Peer disconnected. You're back on the radar — reconnect any time.", "info");
+    publishPresence();
+  }
+}
+
+function failActiveTransfers(reason) {
+  const isActive = t => ["WAITING_ACCEPT", "QUEUED", "SENDING", "RECEIVING"].includes(t.status);
+  for (const [id, transfer] of state.outgoingTransfers.entries()) {
+    if (!isActive(transfer)) continue;
+    transfer.status = "ERROR";
+    transfer.acceptReject?.(new Error(reason));
+    handleTransferError(id, reason, true);
+  }
+  for (const [id, transfer] of state.incomingTransfers.entries()) {
+    if (!isActive(transfer)) continue;
+    transfer.status = "ERROR";
+    try {
+      transfer.writer?.abort()?.catch?.(() => {});
+    } catch (err) {
+      debugLog("Writer abort skipped:", err);
+    }
+    handleTransferError(id, reason, false);
+  }
 }
 
 // --- LATENCY MONITORING PINGS ---
@@ -1466,7 +1643,11 @@ function initiatePingLoop() {
 }
 
 function updatePingIndicator(latency) {
-  // Latency calculation remains alive, but visual stats elements are completely hidden from user view
+  const chip = document.getElementById("latency-display");
+  if (!chip) return;
+  chip.textContent = `${Math.max(0, latency)} ms`;
+  chip.classList.remove("hidden");
+  chip.style.color = latency < 80 ? "var(--ok)" : latency < 250 ? "var(--warn)" : "var(--bad)";
 }
 
 function updateRoomTicket(roomCode) {
@@ -1702,6 +1883,16 @@ function releaseTransferWakeLock() {
 }
 
 // --- RELIABLE ADAPTIVE CHUNK STREAMING ---
+// Streams are serialized: each file gets the full channel bandwidth in turn,
+// so progress/speed/ETA are accurate and chunks never interleave between files.
+let outgoingStreamChain = Promise.resolve();
+
+function queueOutgoingStream(transferId) {
+  const task = outgoingStreamChain.then(() => runAdaptiveBackpressureStream(transferId));
+  outgoingStreamChain = task.catch(() => {});
+  return task;
+}
+
 async function initiateOutgoingFileTransfer(file) {
   requestTransferWakeLock();
   await waitForRouteClassification();
@@ -1736,6 +1927,7 @@ async function initiateOutgoingFileTransfer(file) {
   });
 
   renderTransferCard(transferId, "SENDING", fileMeta);
+  updateAppBadge();
 
   state.conn.send({
     type: "file-offer",
@@ -1750,7 +1942,7 @@ async function initiateOutgoingFileTransfer(file) {
       from: state.identity.name,
       payload: fileMeta
     });
-    await runAdaptiveBackpressureStream(transferId);
+    await queueOutgoingStream(transferId);
   } catch (err) {
     console.error("Transmitter crashed:", err);
     handleTransferError(transferId, "Streaming connection interrupted", true);
@@ -1841,6 +2033,8 @@ async function runAdaptiveBackpressureStream(transferId) {
   updateTransferProgress(transferId, "COMPLETE", file.size, file.size);
   addHistoryRecord("file-sent", `${file.name} (${formatBytes(file.size)})`, true);
   playSound("complete");
+  hapticTap([15, 40, 20]);
+  updateAppBadge();
   releaseTransferWakeLock();
 }
 
@@ -1885,27 +2079,42 @@ function handleFileOffer(meta, connInstance) {
   const container = document.getElementById("transfers-container");
   const card = document.createElement("div");
   card.id = `card-${meta.transferId}`;
-  card.className = "brutal-border p-3 bg-[var(--surface-warm)] brutal-shadow-sm flex flex-col gap-2 relative";
+  card.className = "brutal-border p-3 bg-[var(--yellow)] brutal-shadow-sm flex flex-col gap-2 relative";
 
-  const pathText = meta.path && meta.path !== meta.name ? ` • ${meta.path}` : "";
+  const safeName = sanitizeFileName(meta.name);
+  const pathText = meta.path && meta.path !== meta.name ? escapeHtml(meta.path) : "";
   card.innerHTML = `
-    <div class="flex justify-between items-start gap-2 border-b border-[var(--ink)] pb-1">
+    <div class="flex items-center gap-2.5">
+      <span class="file-kind-icon"><i data-lucide="${getFileKindIcon(safeName)}" class="w-4 h-4"></i></span>
       <div class="min-w-0 flex-grow">
-        <h4 class="font-bold text-xs truncate uppercase font-mono-custom">${escapeHtml(meta.name)}</h4>
-        <div class="text-[9px] font-mono-custom text-[var(--muted)]">${formatBytes(meta.size)}${pathText ? ` • ${escapeHtml(pathText.slice(3))}` : ""}</div>
-      </div>
-      <div class="flex items-center gap-1.5">
-        <button id="decline-btn-${meta.transferId}" class="brutal-btn-sm bg-[var(--paper)] px-2 py-0.5 text-[9px] font-mono-custom font-bold uppercase text-[var(--red)]">Decline</button>
-        <button id="accept-file-btn-${meta.transferId}" class="brutal-btn-sm bg-[var(--ink)] px-2 py-0.5 text-[9px] font-mono-custom font-bold uppercase text-[var(--paper)]">Accept</button>
+        <h4 class="font-bold text-xs truncate uppercase font-mono-custom">${escapeHtml(safeName)}</h4>
+        <div class="text-[9px] font-mono-custom text-[var(--ink)] opacity-75">${formatBytes(meta.size)}${pathText ? ` • ${pathText}` : ""} • wants to send you this file</div>
       </div>
     </div>
-    <div class="text-[10px] font-mono-custom text-[var(--muted)]">Incoming file request. Accept to start the transfer and download/save when complete.</div>
+    <div class="grid grid-cols-2 gap-2">
+      <button id="decline-btn-${meta.transferId}" class="brutal-btn-sm bg-[var(--paper)] p-2 text-[10px] font-mono-custom font-bold uppercase">Decline</button>
+      <button id="accept-file-btn-${meta.transferId}" class="brutal-btn-sm bg-[var(--ink)] text-[var(--paper)] p-2 text-[10px] font-mono-custom font-bold uppercase">Accept</button>
+    </div>
   `;
   container.prepend(card);
+  refreshIcons();
 
-  document.getElementById(`accept-file-btn-${meta.transferId}`).onclick = () => {
+  document.getElementById(`accept-file-btn-${meta.transferId}`).onclick = async () => {
+    // Large files stream straight to disk via the File System Access API so
+    // they never have to fit in RAM. The accept tap is the required user gesture.
+    let writable = null;
+    if (window.showSaveFilePicker && meta.size > STREAM_SAVE_THRESHOLD) {
+      try {
+        const handle = await window.showSaveFilePicker({ suggestedName: safeName });
+        writable = await handle.createWritable();
+      } catch (err) {
+        // Picker dismissed or unavailable: fall back to in-memory receive.
+        writable = null;
+        debugLog("Stream-to-disk fallback:", err);
+      }
+    }
     card.remove();
-    handleFileMetadata(meta);
+    handleFileMetadata(meta, writable);
     connInstance.send({ type: "file-accept", payload: { transferId: meta.transferId } });
   };
 
@@ -1915,30 +2124,34 @@ function handleFileOffer(meta, connInstance) {
     card.remove();
   };
 
-  notifyUser("ez-drop file request", `${meta.name} (${formatBytes(meta.size)}) is waiting for approval.`);
+  notifyUser("ez-drop file request", `${safeName} (${formatBytes(meta.size)}) is waiting for approval.`);
 }
 
-function handleFileMetadata(meta) {
+function handleFileMetadata(meta, writable = null) {
   // Idempotent: the recipient accepts the offer (first call) and then receives
   // the authoritative file-meta packet (second call). Only set up state once so
   // we never render a duplicate card or reset already-buffered chunks.
   if (state.incomingTransfers.has(meta.transferId)) return;
 
-  if (meta.size > 800 * 1024 * 1024) {
+  if (!writable && meta.size > 800 * 1024 * 1024) {
     showGlobalAlert(`Large file incoming (${(meta.size / (1024*1024)).toFixed(0)}MB). Keep browser in foreground.`, "info");
   }
 
   state.incomingTransfers.set(meta.transferId, {
     meta: meta,
-    chunks: [],
+    chunks: writable ? null : [],
     receivedChunksCount: 0,
     receivedBytes: 0,
     status: "RECEIVING",
-    startTime: Date.now()
+    startTime: Date.now(),
+    writer: writable,
+    writeChain: writable ? Promise.resolve() : null,
+    writeFailed: false
   });
 
   requestTransferWakeLock();
   renderTransferCard(meta.transferId, "RECEIVING", meta);
+  updateAppBadge();
 }
 
 function handleIncomingChunk(payload) {
@@ -1946,7 +2159,23 @@ function handleIncomingChunk(payload) {
   const incoming = state.incomingTransfers.get(transferId);
   if (!incoming || incoming.status !== "RECEIVING") return;
 
-  incoming.chunks[payload.chunkIndex] = payload.data;
+  if (incoming.writer) {
+    // Disk-streaming path: chunks arrive in order on the reliable channel and
+    // are appended sequentially through a write chain.
+    incoming.writeChain = incoming.writeChain
+      .then(() => incoming.writer.write(payload.data))
+      .catch(err => {
+        if (!incoming.writeFailed && incoming.status === "RECEIVING") {
+          incoming.writeFailed = true;
+          incoming.status = "ERROR";
+          debugLog("Disk write failed:", err);
+          handleTransferError(transferId, "Disk write failed", false);
+        }
+      });
+  } else {
+    incoming.chunks[payload.chunkIndex] = payload.data;
+  }
+
   incoming.receivedChunksCount++;
   incoming.receivedBytes += payload.data.byteLength;
 
@@ -1955,40 +2184,66 @@ function handleIncomingChunk(payload) {
 
 function finalizeIncomingFile(transferId) {
   const incoming = state.incomingTransfers.get(transferId);
-  if (!incoming) return;
+  if (!incoming || incoming.status === "ERROR" || incoming.status === "CANCELLED") return;
+
+  const safeName = sanitizeFileName(incoming.meta.name);
+
+  // Disk-streamed receive: flush pending writes, close the handle, done.
+  if (incoming.writer) {
+    incoming.doneLabel = "Saved to disk";
+    incoming.writeChain
+      .then(() => incoming.writer.close())
+      .then(() => {
+        incoming.status = "COMPLETE";
+        updateTransferProgress(transferId, "COMPLETE", incoming.meta.size, incoming.meta.size);
+        addHistoryRecord("file-received", `${safeName} (${formatBytes(incoming.meta.size)})`, false);
+        playSound("complete");
+        hapticTap([15, 40, 20]);
+        notifyUser("ez-drop file received", `${safeName} was saved to disk.`);
+        releaseTransferWakeLock();
+        updateAppBadge();
+      })
+      .catch(err => {
+        console.error("Disk finalize failed:", err);
+        handleTransferError(transferId, "Could not finish writing to disk", false);
+      });
+    return;
+  }
 
   incoming.status = "COMPLETE";
   updateTransferProgress(transferId, "COMPLETE", incoming.meta.size, incoming.meta.size);
-  addHistoryRecord("file-received", `${incoming.meta.name} (${formatBytes(incoming.meta.size)})`, false);
+  addHistoryRecord("file-received", `${safeName} (${formatBytes(incoming.meta.size)})`, false);
   playSound("complete");
+  hapticTap([15, 40, 20]);
+  updateAppBadge();
 
   try {
     const fileBlob = new Blob(incoming.chunks, { type: incoming.meta.type });
     incoming.blob = fileBlob;
     const objectUrl = URL.createObjectURL(fileBlob);
     incoming.objectUrl = objectUrl;
-    
+
     const downloadBtn = document.getElementById(`dl-btn-${transferId}`);
     if (downloadBtn) {
       downloadBtn.href = objectUrl;
-      downloadBtn.download = incoming.meta.name;
+      downloadBtn.download = safeName;
       downloadBtn.rel = "noopener";
       downloadBtn.onclick = (event) => saveReceivedFile(event, transferId);
       downloadBtn.classList.remove("hidden");
     }
 
     if (isMobileDevice()) {
-      showGlobalAlert(`Received ${incoming.meta.name}. Tap Save in the transfer card to store it on this device.`, "info");
+      showGlobalAlert(`Received ${safeName}. Tap Save in the transfer card to store it on this device.`, "info");
     } else {
       // Desktop browsers consistently allow user-session initiated object URL downloads.
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = incoming.meta.name;
+      anchor.download = safeName;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
     }
-    notifyUser("ez-drop file received", `${incoming.meta.name} is ready to save.`);
+    notifyUser("ez-drop file received", `${safeName} is ready to save.`);
 
     if (incoming.meta.sha256 && crypto?.subtle) {
       computeBlobSha256(fileBlob).then(hash => {
@@ -2015,23 +2270,16 @@ async function saveReceivedFile(event, transferId) {
   if (!incoming?.blob || !window.showSaveFilePicker) return;
   event.preventDefault();
 
+  const safeName = sanitizeFileName(incoming.meta.name);
   try {
-    const handle = await window.showSaveFilePicker({
-      suggestedName: incoming.meta.name,
-      types: [
-        {
-          description: incoming.meta.type || "Downloaded file",
-          accept: { [incoming.meta.type || "application/octet-stream"]: [`.${incoming.meta.name.split(".").pop() || "download"}`] }
-        }
-      ]
-    });
+    const handle = await window.showSaveFilePicker({ suggestedName: safeName });
     const writable = await handle.createWritable();
     await writable.write(incoming.blob);
     await writable.close();
-    showGlobalAlert(`Saved ${incoming.meta.name}`, "info");
+    showGlobalAlert(`Saved ${safeName}`, "info");
   } catch (err) {
     if (err?.name !== "AbortError") {
-      showGlobalAlert(`Could not save ${incoming.meta.name}. Use the browser download button instead.`, "error");
+      showGlobalAlert(`Could not save ${safeName}. Use the browser download button instead.`, "error");
     }
   }
 }
@@ -2046,19 +2294,23 @@ function renderTransferCard(transferId, direction, meta) {
   card.className = "brutal-border p-3 bg-[var(--surface)] brutal-shadow-sm flex flex-col gap-2 relative";
 
   const heading = document.createElement("div");
-  heading.className = "flex justify-between items-start gap-2 border-b border-[var(--ink)] pb-1";
-  
+  heading.className = "flex justify-between items-center gap-2 border-b border-[var(--ink)] pb-1";
+
+  const iconBox = document.createElement("span");
+  iconBox.className = "file-kind-icon";
+  iconBox.innerHTML = `<i data-lucide="${getFileKindIcon(meta.name)}" class="w-4 h-4"></i>`;
+
   const titleWrapper = document.createElement("div");
   titleWrapper.className = "min-w-0 flex-grow";
-  
+
   const title = document.createElement("h4");
   title.className = "font-bold text-xs truncate uppercase font-mono-custom";
   title.textContent = meta.name;
-  
+
   const specs = document.createElement("div");
   specs.className = "text-[9px] font-mono-custom text-[var(--muted)]";
-  specs.textContent = `${formatBytes(meta.size)} • ${direction}`;
-  
+  specs.textContent = `${formatBytes(meta.size)} • ${direction === "SENDING" ? "Sending" : "Receiving"}`;
+
   titleWrapper.appendChild(title);
   titleWrapper.appendChild(specs);
 
@@ -2079,6 +2331,7 @@ function renderTransferCard(transferId, direction, meta) {
   actionWrapper.appendChild(dlBtn);
   actionWrapper.appendChild(cancelBtn);
 
+  heading.appendChild(iconBox);
   heading.appendChild(titleWrapper);
   heading.appendChild(actionWrapper);
 
@@ -2090,7 +2343,7 @@ function renderTransferCard(transferId, direction, meta) {
 
   const barInner = document.createElement("div");
   barInner.id = `bar-${transferId}`;
-  barInner.className = `h-full w-0 transition-all duration-100 ${direction === "SENDING" ? 'bg-[var(--blue)]' : 'bg-[var(--gold)]'}`;
+  barInner.className = `h-full w-0 transition-all duration-100 bar-striped ${direction === "SENDING" ? 'bg-[var(--blue)]' : 'bg-[var(--gold)]'}`;
 
   barOuter.appendChild(barInner);
 
@@ -2115,6 +2368,7 @@ function renderTransferCard(transferId, direction, meta) {
   card.appendChild(progressWrapper);
 
   container.prepend(card);
+  refreshIcons();
 }
 
 const pendingProgressUpdates = new Map();
@@ -2150,20 +2404,25 @@ function applyTransferProgress(transferId, direction, current, total) {
   const tracker = direction === "SENDING" ? state.outgoingTransfers.get(transferId) : state.incomingTransfers.get(transferId);
   if (tracker) {
     const timeDiff = (Date.now() - tracker.startTime) / 1000;
-    const currentSpeed = timeDiff > 0 ? (current / timeDiff) : 0;
-    
+    const instantSpeed = timeDiff > 0 ? (current / timeDiff) : 0;
+    // Exponential moving average keeps the readout steady instead of jittery.
+    tracker.emaSpeed = tracker.emaSpeed ? tracker.emaSpeed * 0.7 + instantSpeed * 0.3 : instantSpeed;
+
     const speedText = document.getElementById(`speed-${transferId}`);
     if (speedText) {
       if (percentage === 100) {
-        speedText.textContent = "Finished";
+        speedText.textContent = tracker.doneLabel || "Finished";
         const cancelBtn = document.getElementById(`cancel-btn-${transferId}`);
         if (cancelBtn) cancelBtn.classList.add("hidden");
+        if (bar) bar.classList.remove("bar-striped");
         const doneCard = document.getElementById(`card-${transferId}`);
         if (doneCard && !doneCard.classList.contains("transfer-complete")) {
           doneCard.classList.add("transfer-complete");
         }
       } else {
-        speedText.textContent = `${formatBytes(currentSpeed)}/S`;
+        const remainingSecs = tracker.emaSpeed > 0 ? (total - current) / tracker.emaSpeed : Infinity;
+        const eta = formatEta(remainingSecs);
+        speedText.textContent = `${formatBytes(tracker.emaSpeed)}/s${eta ? ` • ${eta} left` : ""}`;
       }
     }
   }
@@ -2174,7 +2433,15 @@ function handleTransferCancellation(transferId, initiatedLocally) {
   const incoming = state.incomingTransfers.get(transferId);
   
   if (outgoing) outgoing.status = "CANCELLED";
-  if (incoming) incoming.status = "CANCELLED";
+  if (incoming) {
+    incoming.status = "CANCELLED";
+    // Drop any partially-written disk file.
+    try {
+      incoming.writer?.abort()?.catch?.(() => {});
+    } catch (err) {
+      debugLog("Writer abort skipped:", err);
+    }
+  }
 
   const card = document.getElementById(`card-${transferId}`);
   if (card) {
@@ -2195,18 +2462,28 @@ function handleTransferCancellation(transferId, initiatedLocally) {
     outgoing.acceptReject(new Error("Transfer cancelled"));
   }
   releaseTransferWakeLock();
+  updateAppBadge();
 }
 
 function handleTransferError(transferId, errorMsg, isOutgoing) {
+  const outgoing = state.outgoingTransfers.get(transferId);
+  if (outgoing && outgoing.status !== "COMPLETE") outgoing.status = "ERROR";
+  const incoming = state.incomingTransfers.get(transferId);
+  if (incoming && incoming.status !== "COMPLETE") incoming.status = "ERROR";
+
   const card = document.getElementById(`card-${transferId}`);
   if (card) {
     card.classList.add("border-[var(--red)]");
+    const bar = document.getElementById(`bar-${transferId}`);
+    if (bar) bar.classList.remove("bar-striped");
     const speedEl = document.getElementById(`speed-${transferId}`);
     if (speedEl) speedEl.textContent = `Error: ${errorMsg}`;
     const cancelBtn = document.getElementById(`cancel-btn-${transferId}`);
-      if (cancelBtn) cancelBtn.classList.add("hidden");
+    if (cancelBtn) cancelBtn.classList.add("hidden");
   }
+  playSound("error");
   releaseTransferWakeLock();
+  updateAppBadge();
 }
 
 function formatBytes(bytes, decimals = 1) {
@@ -2223,6 +2500,7 @@ function clearSessionLogs() {
   document.getElementById("queue-empty-state").classList.remove("hidden");
   state.outgoingTransfers.clear();
   state.incomingTransfers.clear();
+  updateAppBadge();
 }
 
 // --- SIMPLE SESSION HISTORY ---
