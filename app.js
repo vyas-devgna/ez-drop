@@ -16,7 +16,7 @@ const SHARE_STORE = "shared_items";
 const HISTORY_STORE = "history";
 const PEERS_STORE = "known_peers";
 const MAX_HISTORY_ITEMS = 80;
-const MAX_EAGER_CHECKSUM_SIZE = 512 * 1024 * 1024;
+const MAX_EAGER_CHECKSUM_SIZE = 64 * 1024 * 1024;
 const PEER_PREFIX = "ezdrop-";
 const ROOM_PREFIX = "ezdrop-room-";
 
@@ -51,6 +51,7 @@ const state = {
   wakeLock: null,
   scannerInstance: null,
   debugActive: false,
+  activeTab: "receive",
   debugNodes: {
     A: { name: "Copper Fox", incoming: new Map(), outgoing: new Map() },
     B: { name: "Neon Owl", incoming: new Map(), outgoing: new Map() }
@@ -222,10 +223,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   if (incomingRoom && incomingRoom.match(/^\d{5}$/)) {
     // Target incoming auto room setup
+    switchTab("send");
     state.roomCode = generateRandomRoomCode();
     initPeerSession(incomingRoom);
   } else {
     // Normal host init
+    switchTab("receive");
     state.roomCode = generateRandomRoomCode();
     initPeerSession();
   }
@@ -308,6 +311,25 @@ function updateDeviceName(newName) {
       type: "peer-status",
       payload: { name: sanitized }
     });
+  }
+}
+
+// --- TAB NAVIGATION ---
+function switchTab(tabName) {
+  state.activeTab = tabName;
+  
+  document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+  const navBtn = document.getElementById(`nav-${tabName}`);
+  if (navBtn) navBtn.classList.add('active');
+
+  document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
+  const panel = document.getElementById(`tab-${tabName}`);
+  if (panel) panel.classList.add('active');
+
+  if (tabName === 'receive') {
+    state.nearbyDevices.clear();
+    renderNearbyDevices();
+    publishPresence();
   }
 }
 
@@ -425,6 +447,7 @@ function publishPresence() {
   const client = state.mqttClient;
   if (!client || !client.connected || !state.discoveryTopic) return;
   if (!state.peer || state.peer.disconnected || state.connectionState === "CONNECTED") return;
+  if (state.activeTab !== "receive") return;
   client.publish(state.discoveryTopic, JSON.stringify({
     peerId: state.peer.id,
     name: state.identity.name,
@@ -2020,7 +2043,10 @@ async function runAdaptiveBackpressureStream(transferId) {
     updateTransferProgress(transferId, "SENDING", currentObj.sentBytes, file.size);
 
     if (chunkIdx % 16 === 0) {
-      await nextFrame();
+      if (Date.now() - (currentObj.lastYieldTime || 0) > 16) {
+        await new Promise(r => setTimeout(r, 0));
+        currentObj.lastYieldTime = Date.now();
+      }
     }
   }
 

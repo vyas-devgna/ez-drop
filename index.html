@@ -27,7 +27,7 @@
   <script defer src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
   <script defer src="https://unpkg.com/lucide@latest"></script>
   <script defer src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=1.1">
     <script type="text/javascript">
         (function(c,l,a,r,i,t,y){
             c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
@@ -36,7 +36,7 @@
         })(window, document, "clarity", "script", "x3yj42hvxy");
     </script>
 </head>
-<body class="min-h-screen flex flex-col relative antialiased pb-safe">
+<body class="min-h-screen flex flex-col relative antialiased pb-safe tab-send">
   <a href="#main-content" class="skip-link font-mono-custom brutal-border brutal-shadow-sm">Skip to main content</a>
 
   <!-- ARIA Live region for state changes -->
@@ -95,8 +95,11 @@
     <!-- STATE 1: READY / HOME SCREEN — local-first discovery layout -->
     <section id="state-ready" class="py-2 flex flex-col gap-5">
 
-      <!-- Identity hero: this device, radar, internet share toggle -->
-      <div class="bg-[var(--surface)] brutal-border p-5 brutal-shadow relative">
+
+      <!-- RECEIVE TAB -->
+      <div id="tab-receive" class="tab-panel active">
+        <!-- Identity hero: this device, radar, internet share toggle -->
+        <div id="home-receive-card" class="bg-[var(--surface)] brutal-border p-5 brutal-shadow relative">
         <div class="flex justify-between items-center gap-4">
           <div class="flex items-center gap-4 min-w-0">
             <div class="device-avatar select-none" aria-hidden="true">
@@ -154,8 +157,11 @@
           </div>
         </div>
       </div>
+      </div>
 
-      <div class="action-grid">
+      <!-- SEND TAB -->
+      <div id="tab-send" class="tab-panel">
+        <div class="action-grid">
         <!-- Primary: nearby devices -->
         <div class="bg-[var(--surface)] brutal-border p-5 brutal-shadow flex flex-col gap-4 relative">
           <div class="flex justify-between items-center border-b-2 border-dashed border-[var(--ink)] pb-2">
@@ -202,6 +208,7 @@
           </button>
           <p class="text-[11px] font-mono-custom text-[var(--muted)] text-center">Camera turns on only while the scanner is open.</p>
         </div>
+      </div>
       </div>
     </section>
 
@@ -624,6 +631,18 @@
       </div>
     </div>
   </div>
+
+  <!-- Bottom Navigation Dock -->
+  <nav class="bottom-nav">
+    <button id="nav-receive" class="nav-tab active" onclick="switchTab('receive')">
+      <i data-lucide="download" class="w-6 h-6"></i>
+      Receive
+    </button>
+    <button id="nav-send" class="nav-tab" onclick="switchTab('send')">
+      <i data-lucide="send" class="w-6 h-6"></i>
+      Send
+    </button>
+  </nav>
 
   <!-- APPLICATION CORE ARCHITECTURE -->
   <script defer src="app.js"></script>

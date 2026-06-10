@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ez-drop-cache-v1.6'; // Bumped cache to force-evict stale app-shell assets
+const CACHE_NAME = 'ez-drop-cache-v1.9'; // Bumped cache to force-evict stale app-shell assets
 const DEBUG_LOGS = false;
 const DB_NAME = 'ezdrop-db';
 const DB_VERSION = 1;
