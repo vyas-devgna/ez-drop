@@ -228,6 +228,83 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
   50% { opacity: 1; }
 }
 
+/* --- Polished, state-clarifying motion (reduced-motion safe) --- */
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modalPop {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes drawerIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes completeFlash {
+  0% { box-shadow: 0 0 0 0 var(--ok); }
+  40% { box-shadow: 0 0 0 4px rgba(31, 138, 76, 0.35); }
+  100% { box-shadow: 2px 2px 0 0 var(--ink); }
+}
+
+.transfer-complete {
+  border-color: var(--ok);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #transfers-container > * {
+    animation: cardIn 0.25s ease both;
+  }
+
+  #state-ready:not(.hidden),
+  #state-connecting:not(.hidden),
+  #state-connected:not(.hidden),
+  #state-error:not(.hidden) {
+    animation: panelIn 0.28s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+  }
+
+  #scanner-modal:not(.hidden),
+  #invite-modal:not(.hidden),
+  #debug-modal:not(.hidden),
+  #side-menu:not(.hidden) {
+    animation: overlayIn 0.18s ease both;
+  }
+
+  #scanner-modal:not(.hidden) > div,
+  #invite-modal:not(.hidden) > div,
+  #debug-modal:not(.hidden) > div {
+    animation: modalPop 0.24s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+  }
+
+  #side-menu:not(.hidden) > div {
+    animation: drawerIn 0.26s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+  }
+
+  .transfer-complete {
+    animation: completeFlash 0.7s ease both;
+  }
+}
+
+/* Drop zone affordance while dragging files over it */
+#drop-zone.drag-active {
+  background-color: var(--yellow);
+  transform: translate(-2px, -2px);
+  box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0 0 var(--ink);
+}
+
 /* Fun File Assembling Animation */
 .chunk-assembly-container {
   display: flex;

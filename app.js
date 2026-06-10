@@ -837,14 +837,10 @@ async function hashChallenge(challenge, phrase) {
 
 function handlePassphraseChange(val) {
   state.passphrase = val;
+  state.passwordEnabled = val.trim().length > 0;
+  // Reflect the lock state on the menu trigger so users get clear feedback.
   const bar = document.getElementById("password-status-bar");
-  if (val.trim().length > 0) {
-    state.passwordEnabled = true;
-    bar.classList.remove("hidden");
-  } else {
-    state.passwordEnabled = false;
-    bar.classList.add("hidden");
-  }
+  if (bar) bar.classList.toggle("hidden", !state.passwordEnabled);
 }
 
 function disablePasswordMode() {
@@ -876,7 +872,7 @@ function renderAppByState(targetState, diagnosticMsg = "") {
   const ariaStatus = document.getElementById("aria-status");
 
   // Set class defaults
-  dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--gold)]";
+  dot.className = "relative inline-flex rounded-full h-3.5 w-3.5 bg-[var(--gold)]";
   dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--gold)] opacity-75";
 
   switch (targetState) {
@@ -884,7 +880,7 @@ function renderAppByState(targetState, diagnosticMsg = "") {
     case "READY":
       panels.ready.classList.remove("hidden");
       headerStatus.textContent = "Signaling Ready";
-      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#1F8A4C]";
+      dot.className = "relative inline-flex rounded-full h-3.5 w-3.5 bg-[#1F8A4C]";
       dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
       ariaStatus.textContent = "Signaling ready to connect.";
       document.getElementById("ready-status-desc").textContent = "Waiting for entry";
@@ -893,7 +889,7 @@ function renderAppByState(targetState, diagnosticMsg = "") {
     case "CONNECTING":
       panels.connecting.classList.remove("hidden");
       headerStatus.textContent = "Connecting";
-      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--yellow)]";
+      dot.className = "relative inline-flex rounded-full h-3.5 w-3.5 bg-[var(--yellow)]";
       dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--yellow)] opacity-75";
       document.getElementById("connecting-state-desc").textContent = diagnosticMsg || "Connecting to target namespace...";
       ariaStatus.textContent = "Establishing client WebRTC session.";
@@ -902,7 +898,7 @@ function renderAppByState(targetState, diagnosticMsg = "") {
     case "CONNECTED":
       panels.connected.classList.remove("hidden");
       headerStatus.textContent = "CONNECTED";
-      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[#1F8A4C]";
+      dot.className = "relative inline-flex rounded-full h-3.5 w-3.5 bg-[#1F8A4C]";
       dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
       ariaStatus.textContent = `Direct connection streaming active with peer.`;
       break;
@@ -910,7 +906,7 @@ function renderAppByState(targetState, diagnosticMsg = "") {
     case "ERROR":
       panels.error.classList.remove("hidden");
       headerStatus.textContent = "OFFLINE/ERROR";
-      dot.className = "relative inline-flex rounded-full h-3 w-3 bg-[var(--red)]";
+      dot.className = "relative inline-flex rounded-full h-3.5 w-3.5 bg-[var(--red)]";
       dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[var(--red)] opacity-75";
       document.getElementById("error-state-desc").textContent = diagnosticMsg || "WebRTC port connection failed.";
       ariaStatus.textContent = "Connection dropped. Try again.";
@@ -1640,14 +1636,14 @@ function setupDragAndDrop() {
   ['dragenter', 'dragover'].forEach(eventName => {
     dropZone.addEventListener(eventName, (e) => {
       e.preventDefault();
-      dropZone.classList.add("bg-[var(--yellow)]");
+      dropZone.classList.add("drag-active");
     }, false);
   });
 
   ['dragleave', 'drop'].forEach(eventName => {
     dropZone.addEventListener(eventName, (e) => {
       e.preventDefault();
-      dropZone.classList.remove("bg-[var(--yellow)]");
+      dropZone.classList.remove("drag-active");
     }, false);
   });
 
@@ -1923,6 +1919,11 @@ function handleFileOffer(meta, connInstance) {
 }
 
 function handleFileMetadata(meta) {
+  // Idempotent: the recipient accepts the offer (first call) and then receives
+  // the authoritative file-meta packet (second call). Only set up state once so
+  // we never render a duplicate card or reset already-buffered chunks.
+  if (state.incomingTransfers.has(meta.transferId)) return;
+
   if (meta.size > 800 * 1024 * 1024) {
     showGlobalAlert(`Large file incoming (${(meta.size / (1024*1024)).toFixed(0)}MB). Keep browser in foreground.`, "info");
   }
@@ -2157,6 +2158,10 @@ function applyTransferProgress(transferId, direction, current, total) {
         speedText.textContent = "Finished";
         const cancelBtn = document.getElementById(`cancel-btn-${transferId}`);
         if (cancelBtn) cancelBtn.classList.add("hidden");
+        const doneCard = document.getElementById(`card-${transferId}`);
+        if (doneCard && !doneCard.classList.contains("transfer-complete")) {
+          doneCard.classList.add("transfer-complete");
+        }
       } else {
         speedText.textContent = `${formatBytes(currentSpeed)}/S`;
       }
