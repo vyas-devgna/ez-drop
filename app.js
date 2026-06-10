@@ -1032,6 +1032,8 @@ function renderAppByStateImmediate(targetState, diagnosticMsg = "") {
   Object.keys(panels).forEach(key => {
     if (panels[key]) panels[key].classList.add("hidden");
   });
+  const banner = document.getElementById("active-connection-banner");
+  if (banner) banner.classList.add("hidden");
 
   // Update header indicators
   const headerStatus = document.getElementById("header-status-lbl");
@@ -1064,7 +1066,10 @@ function renderAppByStateImmediate(targetState, diagnosticMsg = "") {
       break;
 
     case "CONNECTED":
+      panels.ready.classList.remove("hidden");
       panels.connected.classList.remove("hidden");
+      const banner = document.getElementById("active-connection-banner");
+      if (banner) banner.classList.remove("hidden");
       headerStatus.textContent = "CONNECTED";
       dot.className = "relative inline-flex rounded-full h-3.5 w-3.5 bg-[#1F8A4C]";
       dotPulse.className = "pulse-indicator absolute inline-flex h-full w-full rounded-full bg-[#1F8A4C] opacity-75";
@@ -2681,3 +2686,4 @@ async function handleDebugFileSelection(node, event) {
 
   simulateStream();
 }
+

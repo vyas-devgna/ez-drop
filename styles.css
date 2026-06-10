@@ -209,14 +209,23 @@ body:has(#state-ready.hidden) .bottom-nav {
   display: none !important;
 }
 @media (min-width: 768px) {
+  body {
+    padding-left: 80px;
+  }
   .bottom-nav {
-    max-width: 24rem; /* 384px, nice compact dock */
-    margin: 0 auto;
-    border: 3px solid var(--ink);
-    border-bottom: none;
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-    box-shadow: 6px -6px 0px 0px var(--ink);
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: auto;
+    width: 80px;
+    flex-direction: column;
+    border-top: none;
+    border-right: 3px solid var(--ink);
+    padding-bottom: 0;
+    max-width: none;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 }
 
@@ -239,6 +248,16 @@ body:has(#state-ready.hidden) .bottom-nav {
 }
 .nav-tab:last-child {
   border-right: none;
+}
+@media (min-width: 768px) {
+  .nav-tab {
+    border-right: none;
+    border-bottom: 3px solid var(--ink);
+    min-height: 80px;
+  }
+  .nav-tab:last-child {
+    border-bottom: none;
+  }
 }
 .nav-tab.active {
   background: var(--ink);

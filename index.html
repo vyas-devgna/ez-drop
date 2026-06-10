@@ -93,6 +93,25 @@
     </section>
 
     <!-- STATE 1: READY / HOME SCREEN — local-first discovery layout -->
+    <!-- Unified Connection Info Badge -->
+      <div id="active-connection-banner" class="hidden bg-[var(--surface-warm)] mb-6 brutal-border p-4 brutal-shadow flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-3.5 h-3.5 rounded-full bg-[var(--ok)] shrink-0 pulse-indicator"></div>
+          <div class="min-w-0">
+            <div class="text-[10px] font-mono-custom text-[var(--muted)] uppercase tracking-wider font-bold">Connected to</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span id="peer-name-display" class="font-bold serif-display text-lg">Recipient Name</span>
+              <span id="network-path-badge" class="font-mono-custom text-[9px] uppercase bg-[var(--muted-paper)] text-[var(--ink)] brutal-border px-2 py-0.5">Route: detecting</span>
+              <span id="latency-display" class="hidden font-mono-custom text-[9px] uppercase bg-[var(--paper)] brutal-border px-2 py-0.5">-- ms</span>
+            </div>
+            <div id="network-path-detail" class="text-[9px] font-mono-custom text-[var(--muted)] mt-1">Checking the fastest route between your devices…</div>
+          </div>
+        </div>
+        <button onclick="terminateSession()" class="brutal-btn bg-[var(--red)] text-white p-2 px-4 text-xs font-mono-custom uppercase font-bold shrink-0">
+          Disconnect
+        </button>
+      </div>
+
     <section id="state-ready" class="py-2 flex flex-col gap-5">
 
 
@@ -157,11 +176,93 @@
           </div>
         </div>
       </div>
+
+<!-- Connected Transfer List Stream -->
+      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col gap-4">
+        <div class="flex justify-between items-center border-b-2 border-[var(--ink)] pb-2">
+          <h3 class="serif-display text-lg font-bold">Transfers</h3>
+          <button onclick="clearSessionLogs()" class="text-xs font-mono-custom hover:underline uppercase text-[var(--red)] font-bold">Clear All</button>
+        </div>
+
+        <!-- Blank Queue State -->
+        <div id="queue-empty-state" class="text-center py-6 font-mono-custom text-xs text-[var(--muted)] flex flex-col items-center justify-center gap-2">
+          <i data-lucide="inbox" class="w-7 h-7 opacity-50"></i>
+          <span>Nothing sent yet. Drop a file or send a snippet above to begin.</span>
+        </div>
+
+        <div id="transfers-container" class="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
+          <!-- Dynamically populated stream transfer cards -->
+        </div>
+      </div>
+
+<!-- Compact Session History Dropdown -->
+      <div class="bg-[var(--surface-warm)] brutal-border p-3 brutal-shadow-sm">
+        <details class="cursor-pointer group">
+          <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
+            <span class="flex items-center gap-2">
+              <i data-lucide="history" class="w-4 h-4"></i>
+              <span>History</span>
+            </span>
+            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
+          </summary>
+          <div class="pt-3 border-t border-dashed border-[var(--ink)] mt-3">
+            <div id="history-container" class="font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2 max-h-[150px] overflow-y-auto">
+              <p class="text-center italic opacity-60">No completed items recorded in this session history.</p>
+            </div>
+          </div>
+        </details>
+      </div>
       </div>
 
       <!-- SEND TAB -->
       <div id="tab-send" class="tab-panel">
         <div class="action-grid">
+        <!-- Interactive Core Workspace Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Left Column: Drop zone -->
+        <div id="drop-zone" class="bg-[var(--surface)] brutal-border p-6 brutal-shadow relative flex flex-col items-center justify-center text-center cursor-pointer min-h-[250px] border-dashed border-4 border-[var(--ink)] gap-4">
+          <input type="file" id="file-picker" multiple class="hidden" onchange="handleFileSelection(event)">
+          <input type="file" id="folder-picker" webkitdirectory directory multiple class="hidden" onchange="handleFileSelection(event)">
+
+          <div class="p-4 bg-[var(--muted-paper)] rounded-full brutal-border">
+            <i data-lucide="upload-cloud" class="w-10 h-10 text-[var(--ink)]"></i>
+          </div>
+          <div>
+            <h3 class="serif-display text-xl font-bold mb-1">Drop files to send</h3>
+            <p class="text-xs font-mono-custom text-[var(--muted)]">…or tap anywhere in this box to browse.</p>
+          </div>
+          <div class="flex gap-2 flex-wrap justify-center">
+            <button onclick="event.stopPropagation(); document.getElementById('file-picker').click()" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-[10px] font-mono-custom font-bold uppercase">Choose Files</button>
+            <button onclick="openFolderPicker(event)" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-[10px] font-mono-custom font-bold uppercase">Choose Folder</button>
+          </div>
+          <p class="text-[9px] font-mono-custom text-[var(--ink)] bg-[var(--yellow)] px-2 py-0.5 inline-block brutal-border">No size limit • Direct peer-to-peer stream</p>
+        </div>
+
+        <!-- Right Column: Quick text -->
+        <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col justify-between gap-4">
+          <div class="flex justify-between items-center border-b border-[var(--ink)] pb-2">
+            <h3 class="serif-display text-lg font-bold">Send text</h3>
+            <span class="text-[9px] font-mono-custom uppercase tracking-wider text-[var(--muted)]">Instant delivery</span>
+          </div>
+
+          <div class="flex-grow flex flex-col gap-2">
+            <textarea id="text-input" placeholder="Type or paste text, links, notes…" rows="4" class="bg-[var(--paper)] brutal-border p-3 font-mono-custom text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)] resize-none w-full flex-grow"></textarea>
+
+            <div class="flex gap-2 justify-end">
+              <button onclick="pasteFromClipboard()" class="brutal-btn-sm bg-[var(--surface-warm)] p-2 px-3 text-xs font-mono-custom font-bold flex items-center gap-1.5" title="Paste from device clipboard">
+                <i data-lucide="clipboard" class="w-4 h-4"></i>
+                <span>Paste</span>
+              </button>
+              <button onclick="sendTextMessage()" class="brutal-btn-sm bg-[var(--ink)] text-[var(--paper)] p-2 px-4 text-xs font-mono-custom font-bold uppercase flex items-center gap-2">
+                <span>Send</span>
+                <i data-lucide="send" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
         <!-- Primary: nearby devices -->
         <div class="bg-[var(--surface)] brutal-border p-5 brutal-shadow flex flex-col gap-4 relative">
           <div class="flex justify-between items-center border-b-2 border-dashed border-[var(--ink)] pb-2">
@@ -231,128 +332,7 @@
     </section>
 
     <!-- STATE 3: CONNECTED WORKSPACE -->
-    <section id="state-connected" class="hidden flex flex-col gap-6 max-w-4xl mx-auto w-full py-4">
-
-      <!-- Unified Connection Info Badge -->
-      <div class="bg-[var(--surface-warm)] brutal-border p-4 brutal-shadow flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div class="flex items-center gap-3 min-w-0">
-          <div class="w-3.5 h-3.5 rounded-full bg-[var(--ok)] shrink-0 pulse-indicator"></div>
-          <div class="min-w-0">
-            <div class="text-[10px] font-mono-custom text-[var(--muted)] uppercase tracking-wider font-bold">Connected to</div>
-            <div class="flex items-center gap-2 flex-wrap">
-              <span id="peer-name-display" class="font-bold serif-display text-lg">Recipient Name</span>
-              <span id="network-path-badge" class="font-mono-custom text-[9px] uppercase bg-[var(--muted-paper)] text-[var(--ink)] brutal-border px-2 py-0.5">Route: detecting</span>
-              <span id="latency-display" class="hidden font-mono-custom text-[9px] uppercase bg-[var(--paper)] brutal-border px-2 py-0.5">-- ms</span>
-            </div>
-            <div id="network-path-detail" class="text-[9px] font-mono-custom text-[var(--muted)] mt-1">Checking the fastest route between your devices…</div>
-          </div>
-        </div>
-        <button onclick="terminateSession()" class="brutal-btn bg-[var(--red)] text-white p-2 px-4 text-xs font-mono-custom uppercase font-bold shrink-0">
-          Disconnect
-        </button>
-      </div>
-
-      <!-- Interactive Core Workspace Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        <!-- Left Column: Drop zone -->
-        <div id="drop-zone" class="bg-[var(--surface)] brutal-border p-6 brutal-shadow relative flex flex-col items-center justify-center text-center cursor-pointer min-h-[250px] border-dashed border-4 border-[var(--ink)] gap-4">
-          <input type="file" id="file-picker" multiple class="hidden" onchange="handleFileSelection(event)">
-          <input type="file" id="folder-picker" webkitdirectory directory multiple class="hidden" onchange="handleFileSelection(event)">
-
-          <div class="p-4 bg-[var(--muted-paper)] rounded-full brutal-border">
-            <i data-lucide="upload-cloud" class="w-10 h-10 text-[var(--ink)]"></i>
-          </div>
-          <div>
-            <h3 class="serif-display text-xl font-bold mb-1">Drop files to send</h3>
-            <p class="text-xs font-mono-custom text-[var(--muted)]">…or tap anywhere in this box to browse.</p>
-          </div>
-          <div class="flex gap-2 flex-wrap justify-center">
-            <button onclick="event.stopPropagation(); document.getElementById('file-picker').click()" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-[10px] font-mono-custom font-bold uppercase">Choose Files</button>
-            <button onclick="openFolderPicker(event)" class="brutal-btn-sm bg-[var(--surface-warm)] px-3 py-1 text-[10px] font-mono-custom font-bold uppercase">Choose Folder</button>
-          </div>
-          <p class="text-[9px] font-mono-custom text-[var(--ink)] bg-[var(--yellow)] px-2 py-0.5 inline-block brutal-border">No size limit • Direct peer-to-peer stream</p>
-        </div>
-
-        <!-- Right Column: Quick text -->
-        <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col justify-between gap-4">
-          <div class="flex justify-between items-center border-b border-[var(--ink)] pb-2">
-            <h3 class="serif-display text-lg font-bold">Send text</h3>
-            <span class="text-[9px] font-mono-custom uppercase tracking-wider text-[var(--muted)]">Instant delivery</span>
-          </div>
-
-          <div class="flex-grow flex flex-col gap-2">
-            <textarea id="text-input" placeholder="Type or paste text, links, notes…" rows="4" class="bg-[var(--paper)] brutal-border p-3 font-mono-custom text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)] resize-none w-full flex-grow"></textarea>
-
-            <div class="flex gap-2 justify-end">
-              <button onclick="pasteFromClipboard()" class="brutal-btn-sm bg-[var(--surface-warm)] p-2 px-3 text-xs font-mono-custom font-bold flex items-center gap-1.5" title="Paste from device clipboard">
-                <i data-lucide="clipboard" class="w-4 h-4"></i>
-                <span>Paste</span>
-              </button>
-              <button onclick="sendTextMessage()" class="brutal-btn-sm bg-[var(--ink)] text-[var(--paper)] p-2 px-4 text-xs font-mono-custom font-bold uppercase flex items-center gap-2">
-                <span>Send</span>
-                <i data-lucide="send" class="w-4 h-4"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Connected Transfer List Stream -->
-      <div class="bg-[var(--surface)] brutal-border p-6 brutal-shadow flex flex-col gap-4">
-        <div class="flex justify-between items-center border-b-2 border-[var(--ink)] pb-2">
-          <h3 class="serif-display text-lg font-bold">Transfers</h3>
-          <button onclick="clearSessionLogs()" class="text-xs font-mono-custom hover:underline uppercase text-[var(--red)] font-bold">Clear All</button>
-        </div>
-
-        <!-- Blank Queue State -->
-        <div id="queue-empty-state" class="text-center py-6 font-mono-custom text-xs text-[var(--muted)] flex flex-col items-center justify-center gap-2">
-          <i data-lucide="inbox" class="w-7 h-7 opacity-50"></i>
-          <span>Nothing sent yet. Drop a file or send a snippet above to begin.</span>
-        </div>
-
-        <div id="transfers-container" class="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
-          <!-- Dynamically populated stream transfer cards -->
-        </div>
-      </div>
-
-      <!-- Compact Session History Dropdown -->
-      <div class="bg-[var(--surface-warm)] brutal-border p-3 brutal-shadow-sm">
-        <details class="cursor-pointer group">
-          <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
-            <span class="flex items-center gap-2">
-              <i data-lucide="history" class="w-4 h-4"></i>
-              <span>History</span>
-            </span>
-            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
-          </summary>
-          <div class="pt-3 border-t border-dashed border-[var(--ink)] mt-3">
-            <div id="history-container" class="font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2 max-h-[150px] overflow-y-auto">
-              <p class="text-center italic opacity-60">No completed items recorded in this session history.</p>
-            </div>
-          </div>
-        </details>
-      </div>
-
-      <div class="bg-[var(--surface)] brutal-border p-3 brutal-shadow-sm">
-        <details class="cursor-pointer group">
-          <summary class="font-mono-custom text-xs uppercase font-bold flex justify-between items-center list-none select-none">
-            <span class="flex items-center gap-2">
-              <i data-lucide="wifi" class="w-4 h-4"></i>
-              <span>Nearby Devices</span>
-            </span>
-            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
-          </summary>
-          <div id="nearby-devices-list-2" class="nearby-devices-container pt-3 border-t border-dashed border-[var(--ink)] mt-3 font-mono-custom text-xs text-[var(--muted)] flex flex-col gap-2">
-            <div class="nearby-empty">
-              <div class="nearby-sweep" aria-hidden="true"></div>
-              <span>Scanning your network…</span>
-            </div>
-          </div>
-        </details>
-      </div>
-
-    </section>
+    <section id="state-connected" class="hidden"></section>
 
     <!-- STATE 4: SYSTEM CONTEXT ERROR / FALLBACK SCREEN -->
     <section id="state-error" class="hidden max-w-md mx-auto w-full py-8">
@@ -377,19 +357,7 @@
 
   </main>
 
-  <!-- Simplified Privacy Line Helper Footer -->
-  <footer class="w-full max-w-6xl mx-auto px-4 mt-auto">
-    <div class="bg-[var(--ink)] text-[var(--paper)] brutal-border p-4 brutal-shadow flex justify-between items-center flex-col sm:flex-row gap-3">
-      <span class="text-xs font-mono-custom opacity-90 text-center sm:text-left">
-        Direct browser-to-browser P2P transfer. No middle upload servers.
-      </span>
-      <div class="flex gap-4 text-[10px] font-mono-custom uppercase tracking-wider font-bold">
-        <a href="#menu-help" onclick="toggleMenu(); showMenuSection('help')" class="hover:underline text-[var(--yellow)]">Connection Help</a>
-        <span>•</span>
-        <a href="#menu-about" onclick="toggleMenu(); showMenuSection('about')" class="hover:underline text-[var(--violet)]">How It Works</a>
-      </div>
-    </div>
-  </footer>
+
 
   <!-- FULLSCREEN BURGER DRAWER / SLIDEOVER -->
   <div id="side-menu" class="fixed inset-0 bg-black/60 z-50 backdrop-blur-xs hidden transition-opacity flex justify-end" onclick="closeMenuOnOutsideClick(event)">
